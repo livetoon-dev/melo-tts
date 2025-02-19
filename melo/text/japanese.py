@@ -485,6 +485,20 @@ def japanese_text_to_phonemes(text: str) -> str:
     return res
 
 
+rep_map = {
+    "：": ",",
+    "；": ",",
+    "，": ",",
+    "。": ".",
+    "！": "!",
+    "？": "?",
+    "\n": ".",
+    "·": ",",
+    "、": ",",
+    "...": "…",
+}
+
+
 def is_japanese_character(char):
     # 定义日语文字系统的 Unicode 范围
     japanese_ranges = [
@@ -503,23 +517,11 @@ def is_japanese_character(char):
     for start, end in japanese_ranges:
         if start <= char_code <= end:
             return True
+    
+    if char in rep_map or char in punctuation:
+        return True
 
     return False
-
-
-rep_map = {
-    "：": ",",
-    "；": ",",
-    "，": ",",
-    "。": ".",
-    "！": "!",
-    "？": "?",
-    "\n": ".",
-    "·": ",",
-    "、": ",",
-    "...": "…",
-}
-
 
 def replace_punctuation(text):
     pattern = re.compile("|".join(re.escape(p) for p in rep_map.keys()))
