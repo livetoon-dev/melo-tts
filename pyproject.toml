@@ -37,3 +37,14 @@ dependencies = [
     "unidic==1.1.0",
     "unidic-lite==1.0.8",
 ]
+
+[project.scripts]
+melotts = "melo.main:main"
+melo = "melo.main:main"
+melo-ui = "melo.app:main"
+
+[tool.setuptools.package-data]
+"*" = ["*.txt", "cmudict_*"]
+
+[tool.uv]
+package = true
