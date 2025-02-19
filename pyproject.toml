@@ -1,0 +1,39 @@
+[project]
+name = "melotts"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "anyascii==0.3.2",
+    "botocore==1.34.88",
+    "cached-path>=1.6.2",
+    "cn2an==0.5.22",
+    "eng-to-ipa==0.0.2",
+    "fastapi==0.111.0",
+    "fugashi==1.3.0",
+    "g2p-en==2.1.0",
+    "g2pkk>=0.1.1",
+    "gradio>=4.26.0",
+    "gruut[de,es,fr]==2.2.3",
+    "inflect==7.0.0",
+    "jamo==0.4.1",
+    "jieba==0.42.1",
+    "langid==1.1.6",
+    "librosa==0.9.1",
+    "loguru==0.7.2",
+    "mecab-python3==1.0.9",
+    "num2words==0.5.12",
+    "pydub==0.25.1",
+    "pykakasi==2.2.1",
+    "pypinyin==0.50.0",
+    "tensorboard==2.16.2",
+    "torch>=2.6.0",
+    "torchaudio>=2.6.0",
+    "tqdm>=4.67.1",
+    "transformers==4.27.4",
+    "txtsplit>=1.0.0",
+    "unidecode==1.3.7",
+    "unidic==1.1.0",
+    "unidic-lite==1.0.8",
+]
