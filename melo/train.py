@@ -496,8 +496,10 @@ def train_and_evaluate(
                     images=image_dict,
                     scalars=scalar_dict,
                 )
-
-            if global_step % hps.train.eval_interval == 0:
+            # global_step 12000未満は使い物にならないので保存しない
+            # global_step 20000以上はhps.train.eval_interval * 10する
+            save_rate = 10 if global_step >= 20000 else 1
+            if global_step % (hps.train.eval_interval * save_rate) == 0 and global_step >= 12000:
                 evaluate(hps, net_g, eval_loader, writer_eval)
                 utils.save_checkpoint(
                     net_g,
@@ -522,13 +524,15 @@ def train_and_evaluate(
                         os.path.join(hps.model_dir, "DUR_{}.pth".format(global_step)),
                     )
                 keep_ckpts = getattr(hps.train, "keep_ckpts", 5)
-                if keep_ckpts > 0:
-                    utils.clean_checkpoints(
-                        path_to_models=hps.model_dir,
-                        n_ckpts_to_keep=keep_ckpts,
-                        sort_by_time=True,
-                    )
-
+                # 勝手に削除しないようにコメントアウト
+                # if keep_ckpts > 0:
+                #     utils.clean_checkpoints(
+                #         path_to_models=hps.model_dir,
+                #         n_ckpts_to_keep=keep_ckpts,
+                #         sort_by_time=True,
+                #     )
+        if global_step > 200000: # MAX_GLOBAL_STEP
+            exit()
         global_step += 1
 
     if rank == 0:
