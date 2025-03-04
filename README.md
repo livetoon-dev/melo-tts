@@ -4,6 +4,34 @@
   <a href="https://trendshift.io/repositories/8133" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8133" alt="myshell-ai%2FMeloTTS | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
 
+## レポジトリについて
+
+- **ソースについて**  
+  このプロジェクトはMeloTTSからコピーしています。
+
+- **日本語対応の改善**  
+  日本語向けに改善を行っています。詳細は[こちら](https://zenn.dev/kun432/scraps/34d9ff1874bd3b)をご参照ください。
+
+- **プロジェクト管理 (uv利用)**  
+  プロジェクトは[uv](https://astral.sh/uv)で管理しています。環境構築は以下のコマンドを実行してください:
+  
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  uv sync
+  ```
+
+- 辞書のダウンロード (トレーニング前に必要)
+トレーニング前に、以下のコマンドで辞書をダウンロードしてください:
+
+  ```bash
+  cd melo
+  uv run python -m unidic download
+  ```
+
+- データ配置について
+データは melo/data 配下に配置してください。
+
+
 ## Introduction
 MeloTTS is a **high-quality multi-lingual** text-to-speech library by [MIT](https://www.mit.edu/) and [MyShell.ai](https://myshell.ai). Supported languages include:
 
