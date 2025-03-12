@@ -12,4 +12,12 @@ build/
 
 melo/data/
 melo/logs/
+melo/aws/
+melo/bert/
 output/
+*.log
+*.json
+*.rst
+*.pth
+*.list
+

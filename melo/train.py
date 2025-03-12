@@ -78,7 +78,7 @@ def run():
     collate_fn = TextAudioSpeakerCollate()
     train_loader = DataLoader(
         train_dataset,
-        num_workers=16,
+        num_workers=8,
         shuffle=False,
         pin_memory=True,
         collate_fn=collate_fn,
@@ -167,9 +167,9 @@ def run():
     net_d = DDP(net_d, device_ids=[rank], find_unused_parameters=True)
     
     pretrain_G, pretrain_D, pretrain_dur = load_pretrain_model()
-    hps.pretrain_G = hps.pretrain_G or pretrain_G
-    hps.pretrain_D = hps.pretrain_D or pretrain_D
-    hps.pretrain_dur = hps.pretrain_dur or pretrain_dur
+    hps.pretrain_G = hps.pretrain_G or None
+    hps.pretrain_D = hps.pretrain_D or None
+    hps.pretrain_dur = hps.pretrain_dur or None
 
     if hps.pretrain_G:
         utils.load_checkpoint(
@@ -496,10 +496,8 @@ def train_and_evaluate(
                     images=image_dict,
                     scalars=scalar_dict,
                 )
-            # global_step 12000未満は使い物にならないので保存しない
-            # global_step 20000以上はhps.train.eval_interval * 10する
-            save_rate = 10 if global_step >= 20000 else 1
-            if global_step % (hps.train.eval_interval * save_rate) == 0 and global_step >= 12000:
+
+            if global_step % hps.train.eval_interval == 0:
                 evaluate(hps, net_g, eval_loader, writer_eval)
                 utils.save_checkpoint(
                     net_g,
@@ -523,16 +521,14 @@ def train_and_evaluate(
                         epoch,
                         os.path.join(hps.model_dir, "DUR_{}.pth".format(global_step)),
                     )
-                keep_ckpts = getattr(hps.train, "keep_ckpts", 5)
-                # 勝手に削除しないようにコメントアウト
+                # keep_ckpts = getattr(hps.train, "keep_ckpts", 20)
                 # if keep_ckpts > 0:
                 #     utils.clean_checkpoints(
                 #         path_to_models=hps.model_dir,
                 #         n_ckpts_to_keep=keep_ckpts,
                 #         sort_by_time=True,
                 #     )
-        if global_step > 200000: # MAX_GLOBAL_STEP
-            exit()
+
         global_step += 1
 
     if rank == 0:

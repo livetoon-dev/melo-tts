@@ -1,6 +1,6 @@
 CONFIG=$1
 GPUS=$2
-MODEL_NAME=$(basename "$(dirname $CONFIG)")
+MODEL_NAME=pretrain_tone_4
 
 PORT=10902
 

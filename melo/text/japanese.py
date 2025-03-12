@@ -568,7 +568,7 @@ def distribute_phone(n_phone, n_word):
 
 # tokenizer = AutoTokenizer.from_pretrained('cl-tohoku/bert-base-japanese-v3')
 
-model_id = 'tohoku-nlp/bert-base-japanese-v3'
+model_id = 'ku-nlp/deberta-v2-base-japanese-char-wwm'
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 def g2p(norm_text):
 
