@@ -26,6 +26,7 @@
   ```bash
   cd melo
   uv run python -m unidic download
+  uv pip install pyopenjtalk-plus
   ```
 
 - データ配置について
