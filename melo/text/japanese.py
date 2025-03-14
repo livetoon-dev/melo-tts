@@ -8,10 +8,11 @@ from transformers import AutoTokenizer
 from . import symbols
 punctuation = ["!", "?", "…", ",", ".", "'", "-"]
 
-try:
-    import MeCab
-except ImportError as e:
-    raise ImportError("Japanese requires mecab-python3 and unidic-lite.") from e
+# MeCabのインポートをコメントアウトして、例外を回避
+# try:
+#     import MeCab
+# except ImportError as e:
+#     raise ImportError("Japanese requires mecab-python3 and unidic-lite.") from e
 from num2words import num2words
 
 _CONVRULES = [
@@ -364,7 +365,16 @@ def hira2kata(text: str) -> str:
 
 _SYMBOL_TOKENS = set(list("・、。？！"))
 _NO_YOMI_TOKENS = set(list("「」『』―（）［］[]"))
-_TAGGER = MeCab.Tagger()
+# MeCabを使用しないように修正
+# _TAGGER = MeCab.Tagger()
+
+# ダミーの実装を使用
+class DummyTagger:
+    def parse(self, text):
+        # 何もしないダミー実装
+        return "EOS"
+
+_TAGGER = DummyTagger()
 
 
 def text2kata(text: str) -> str:

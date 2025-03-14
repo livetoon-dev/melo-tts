@@ -6,7 +6,7 @@ PORT=10902
 
 while : # auto-resume: the code sometimes crash due to bug of gloo on some gpus
 do
-torchrun --nproc_per_node=$GPUS \
+uv run torchrun --nproc_per_node=$GPUS \
         --master_port=$PORT \
     train.py --c $CONFIG --model $MODEL_NAME 
 

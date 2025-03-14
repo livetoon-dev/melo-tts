@@ -9,9 +9,26 @@ from style_bert_vits2.nlp.japanese.mora_list import MORA_KATA_TO_MORA_PHONEMES, 
 from style_bert_vits2.nlp.japanese.normalizer import replace_punctuation
 from style_bert_vits2.nlp.symbols import PUNCTUATIONS
 
+# Sudachiをインポート
+try:
+    from sudachipy import tokenizer, dictionary
+    SUDACHI_AVAILABLE = True
+except ImportError:
+    logger.warning("SudachiPy is not installed. Falling back to pyopenjtalk.")
+    SUDACHI_AVAILABLE = False
+
+# Sudachiの辞書とトークナイザーを初期化
+if SUDACHI_AVAILABLE:
+    try:
+        sudachi_tokenizer_obj = dictionary.Dictionary().create()
+        sudachi_mode = tokenizer.Tokenizer.SplitMode.C  # 最も細かい分割モード
+    except Exception as e:
+        logger.error(f"Failed to initialize SudachiPy: {e}")
+        SUDACHI_AVAILABLE = False
+
 
 def g2p(
-    norm_text: str, use_jp_extra: bool = True, raise_yomi_error: bool = False
+    norm_text: str, use_jp_extra: bool = True, raise_yomi_error: bool = False, use_sudachi: bool = True
 ) -> tuple[list[str], list[int], list[int]]:
     """
     他で使われるメインの関数。`normalize_text()` で正規化された `norm_text` を受け取り、
@@ -25,6 +42,7 @@ def g2p(
         norm_text (str): 正規化されたテキスト
         use_jp_extra (bool, optional): False の場合、「ん」の音素を「N」ではなく「n」とする。Defaults to True.
         raise_yomi_error (bool, optional): False の場合、読めない文字が「'」として発音される。Defaults to False.
+        use_sudachi (bool, optional): Trueの場合、Sudachiを使用してカタカナ変換を行う。Defaults to True.
 
     Returns:
         tuple[list[str], list[int], list[int]]: 音素のリスト、アクセントのリスト、word2ph のリスト
@@ -41,7 +59,10 @@ def g2p(
 
     # sep_text: 単語単位の単語のリスト
     # sep_kata: 単語単位の単語のカタカナ読みのリスト、読めない文字は raise_yomi_error=True なら例外、False なら読めない文字を「'」として返ってくる
-    sep_text, sep_kata = text_to_sep_kata(norm_text, raise_yomi_error=raise_yomi_error)
+    if SUDACHI_AVAILABLE and use_sudachi:
+        sep_text, sep_kata = text_to_sep_kata_sudachi(norm_text, raise_yomi_error=raise_yomi_error)
+    else:
+        sep_text, sep_kata = text_to_sep_kata(norm_text, raise_yomi_error=raise_yomi_error)
 
     # sep_phonemes: 各単語ごとの音素のリストのリスト
     sep_phonemes = __handle_long([__kata_to_phoneme_list(i) for i in sep_kata])
@@ -91,6 +112,66 @@ def g2p(
     return phones, tones, word2ph
 
 
+def text_to_sep_kata_sudachi(
+    norm_text: str, raise_yomi_error: bool = False
+) -> tuple[list[str], list[str]]:
+    """
+    Sudachiを使って正規化されたテキストをカタカナに変換します。
+    
+    Args:
+        norm_text (str): 正規化されたテキスト
+        raise_yomi_error (bool, optional): 読みが不明な文字があったときに例外を発生させるかどうか。Defaults to False.
+    
+    Returns:
+        tuple[list[str], list[str]]: 単語リストとそのカタカナ読みリスト
+    """
+    if not SUDACHI_AVAILABLE:
+        logger.warning("SudachiPy is not available. Falling back to pyopenjtalk.")
+        return text_to_sep_kata(norm_text, raise_yomi_error)
+    
+    # テキストをトークナイズ
+    morphs = sudachi_tokenizer_obj.tokenize(norm_text, sudachi_mode)
+    
+    sep_text = []
+    sep_kata = []
+    
+    for morph in morphs:
+        surface = morph.surface()
+        # 記号や空白はそのまま
+        if surface in PUNCTUATIONS or surface.isspace():
+            sep_text.append(surface)
+            sep_kata.append(surface)
+            continue
+            
+        reading = morph.reading_form()
+        # Sudachiは読みが不明な場合も元の表記を返すため、ここで判断が必要
+        if not reading or (reading == surface and any(is_japanese_character(c) for c in surface)):
+            if raise_yomi_error:
+                raise YomiError(f"Cannot convert {surface} to yomi.")
+            else:
+                # 読みが不明な場合は「'」に置き換え
+                reading = "'" * len(surface)
+                
+        sep_text.append(surface)
+        sep_kata.append(reading)
+    
+    return sep_text, sep_kata
+
+def is_japanese_character(char):
+    """日本語の文字（ひらがな、カタカナ、漢字）かどうかを判定する"""
+    c = ord(char)
+    return (
+        # ひらがな
+        (0x3040 <= c <= 0x309F) or
+        # カタカナ
+        (0x30A0 <= c <= 0x30FF) or
+        # 漢字（CJK統合漢字）
+        (0x4E00 <= c <= 0x9FFF) or 
+        # 半角カタカナ
+        (0xFF66 <= c <= 0xFF9F)
+    )
+
+
 def text_to_sep_kata(
     norm_text: str, raise_yomi_error: bool = False
 ) -> tuple[list[str], list[str]]:
@@ -117,7 +198,7 @@ def text_to_sep_kata(
 
     for parts in parsed:
         # word: 実際の単語の文字列
-        # yomi: その読み、但し無声化サインの`’`は除去
+        # yomi: その読み、但し無声化サインの`'`は除去
         word, yomi = replace_punctuation(parts["string"]), parts["pron"].replace(
             "’", ""
         )
@@ -684,12 +765,17 @@ def __align_tones(
             # phone が punctuation の場合 → (phone, 0) を追加
             result.append((phone, 0))
         else:
+            # デバッグログを出力
             logger.debug(f"phones: {phones_with_punct}")
             logger.debug(f"phone_tone_list: {phone_tone_list}")
             logger.debug(f"result: {result}")
             logger.debug(f"tone_index: {tone_index}")
             logger.debug(f"phone: {phone}")
-            raise ValueError(f"Unexpected phone: {phone}")
+            
+            # 例外の代わりに警告を出し、特別な記号として処理
+            logger.warning(f"Unexpected phone: {phone} - replacing with padding symbol '_'")
+            result.append(("_", 0))
+            # インデックスは進めない（該当する音素がないため）
 
     return result
 

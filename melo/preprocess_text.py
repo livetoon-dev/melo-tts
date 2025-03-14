@@ -27,6 +27,7 @@ from text.symbols import symbols, num_languages, num_tones
 @click.option("--val-per-spk", default=4)
 @click.option("--max-val-total", default=8)
 @click.option("--clean/--no-clean", default=True)
+@click.option("--use-sudachi/--no-sudachi", default=False, help="日本語のテキスト処理にSudachiを使用する")
 def main(
     metadata: str,
     cleaned_path: Optional[str],
@@ -36,6 +37,7 @@ def main(
     val_per_spk: int,
     max_val_total: int,
     clean: bool,
+    use_sudachi: bool,
 ):
     if train_path is None:
         train_path = os.path.join(os.path.dirname(metadata), 'train.list')
@@ -52,33 +54,43 @@ def main(
         for line in tqdm(open(metadata, encoding="utf-8").readlines()):
             try:
                 utt, spk, language, text = line.strip().split("|")
-                norm_text, phones, tones, word2ph, bert = clean_text_bert(text, language, device='cuda:0')
-                for ph in phones:
-                    if ph not in symbols and ph not in new_symbols:
-                        new_symbols.append(ph)
-                        print('update!, now symbols:')
-                        print(new_symbols)
-                        with open(f'{language}_symbol.txt', 'w') as f:
-                            f.write(f'{new_symbols}')
+                print(f"Processing: {utt}, language: {language}, text: {text}")
+                try:
+                    norm_text, phones, tones, word2ph, bert = clean_text_bert(text, language, device='cuda:0', use_sudachi=use_sudachi)
+                    for ph in phones:
+                        if ph not in symbols and ph not in new_symbols:
+                            new_symbols.append(ph)
+                            print('update!, now symbols:')
+                            print(new_symbols)
+                            with open(f'{language}_symbol.txt', 'w') as f:
+                                f.write(f'{new_symbols}')
 
-                assert len(phones) == len(tones)
-                assert len(phones) == sum(word2ph)
-                out_file.write(
-                    "{}|{}|{}|{}|{}|{}|{}\n".format(
-                        utt,
-                        spk,
-                        language,
-                        norm_text,
-                        " ".join(phones),
-                        " ".join([str(i) for i in tones]),
-                        " ".join([str(i) for i in word2ph]),
+                    assert len(phones) == len(tones)
+                    assert len(phones) == sum(word2ph)
+                    out_file.write(
+                        "{}|{}|{}|{}|{}|{}|{}\n".format(
+                            utt,
+                            spk,
+                            language,
+                            norm_text,
+                            " ".join(phones),
+                            " ".join([str(i) for i in tones]),
+                            " ".join([str(i) for i in word2ph]),
+                        )
                     )
-                )
-                bert_path = utt.replace(".wav", ".bert.pt")
-                os.makedirs(os.path.dirname(bert_path), exist_ok=True)
-                torch.save(bert.cpu(), bert_path)
-            except Exception as error:
-                print("err!", line, error)
+                    bert_path = utt.replace(".wav", ".bert.pt")
+                    os.makedirs(os.path.dirname(bert_path), exist_ok=True)
+                    # BERT特徴量を保存
+                    torch.save(bert, bert_path)
+                    print(f"Saved BERT features to {bert_path}")
+                except Exception as e:
+                    print(f"Error processing text: {text}")
+                    print(f"Error details: {str(e)}")
+                    continue
+            except Exception as e:
+                print(f"Error parsing line: {line.strip()}")
+                print(f"Error details: {str(e)}")
+                continue
 
         out_file.close()
 

@@ -80,6 +80,7 @@ ja_symbols = [
     "a:",
     "b",
     "by",
+    "c",
     "ch",
     "d",
     "dy",
@@ -95,6 +96,7 @@ ja_symbols = [
     "j",
     "k",
     "ky",
+    "l",
     "m",
     "my",
     "n",
@@ -113,10 +115,15 @@ ja_symbols = [
     "ty",
     "u",
     "u:",
+    "v",
     "w",
+    "x",
     "y",
     "z",
     "zy",
+    "'",
+    "-",
+    ":",
 ]
 num_ja_tones = 1
 
