@@ -5,7 +5,7 @@ import sys
 
 models = {}
 tokenizers = {}
-def get_bert_feature(text, word2ph, device=None, model_id='ku-nlp/deberta-v2-large-japanese-char-wwm'):
+def get_bert_feature(text, word2ph, device=None, model_id='line-corporation/line-distilbert-base-japanese'):
     global model
     global tokenizer
 
@@ -22,7 +22,7 @@ def get_bert_feature(text, word2ph, device=None, model_id='ku-nlp/deberta-v2-lar
             device
         )
         models[model_id] = model
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
         tokenizers[model_id] = tokenizer
     else:
         model = models[model_id]
