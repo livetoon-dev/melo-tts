@@ -1,5 +1,9 @@
 # flake8: noqa: E402
 
+# マルチプロセス設定
+import multiprocessing
+multiprocessing.set_start_method('spawn', force=True)
+
 import os
 import torch
 from torch.nn import functional as F

@@ -4,6 +4,48 @@
   <a href="https://trendshift.io/repositories/8133" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8133" alt="myshell-ai%2FMeloTTS | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
 
+# MeloTTS 日本語対応強化版
+
+## 主な改良点
+
+- **LINE DistilBERT対応**  
+  日本語処理に特化したLINE DistilBERT（768次元）に対応しました。これにより、日本語音声合成の品質が向上します。
+
+- **日本語言語コード対応の強化**  
+  言語コードとして「JA」と「JP」の両方に対応しました。これにより、どちらの表記を使用しても正しく日本語として認識されます。
+
+- **エラーハンドリングの改善**  
+  未対応の言語コードに対して適切なエラーメッセージを表示するようになりました。
+
+## 使い方
+
+1. 環境構築
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   uv sync
+   ```
+
+2. 辞書のダウンロード
+   ```bash
+   cd melo
+   uv run python -m unidic download
+   uv pip install pyopenjtalk-plus
+   ```
+
+3. トレーニング実行
+   ```bash
+   cd melo
+   bash train.sh data/your_config.json 1
+   ```
+
+## 元のMeloTTSとの差分
+
+- LINE DistilBERT（768次元）のサポート追加
+- 言語コード「JA」のサポート追加（元は「JP」のみ）
+- エラーハンドリングの強化
+- マルチプロセス設定の最適化
+- ポート競合問題の解決（ランダムポート対応）
+
 ## レポジトリについて
 
 - **ソースについて**  

@@ -50,7 +50,7 @@ def load_model(
 
     Style-Bert-VITS2 では、BERT モデルに下記の 3 つが利用されている。
     これ以外の BERT モデルを指定した場合は正常に動作しない可能性が高い。
-    - 日本語: ku-nlp/deberta-v2-large-japanese-char-wwm
+    - 日本語: line-corporation/line-distilbert-base-japanese
     - 英語: microsoft/deberta-v3-large
     - 中国語: hfl/chinese-roberta-wwm-ext-large
 
@@ -102,6 +102,7 @@ def load_tokenizer(
     pretrained_model_name_or_path: Optional[str] = None,
     cache_dir: Optional[str] = None,
     revision: str = "main",
+    trust_remote_code: bool = False,
 ) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast, DebertaV2Tokenizer]:
     """
     指定された言語の BERT モデルをロードし、ロード済みの BERT トークナイザーを返す。
@@ -112,7 +113,7 @@ def load_tokenizer(
 
     Style-Bert-VITS2 では、BERT モデルに下記の 3 つが利用されている。
     これ以外の BERT モデルを指定した場合は正常に動作しない可能性が高い。
-    - 日本語: ku-nlp/deberta-v2-large-japanese-char-wwm
+    - 日本語: line-corporation/line-distilbert-base-japanese
     - 英語: microsoft/deberta-v3-large
     - 中国語: hfl/chinese-roberta-wwm-ext-large
 
@@ -121,6 +122,7 @@ def load_tokenizer(
         pretrained_model_name_or_path (Optional[str]): ロードする学習済みモデルの名前またはパス。指定しない場合はデフォルトのパスが利用される (デフォルト: None)
         cache_dir (Optional[str]): モデルのキャッシュディレクトリ。指定しない場合はデフォルトのキャッシュディレクトリが利用される (デフォルト: None)
         revision (str): モデルの Hugging Face 上の Git リビジョン。指定しない場合は最新の main ブランチの内容が利用される (デフォルト: None)
+        trust_remote_code (bool): トークナイザーのロード時にリモートコードを信頼するかどうか。一部のモデル（LINE DistilBERTなど）では必要 (デフォルト: False)
 
     Returns:
         Union[PreTrainedTokenizer, PreTrainedTokenizerFast, DebertaV2Tokenizer]: ロード済みの BERT トークナイザー
@@ -147,10 +149,12 @@ def load_tokenizer(
             revision=revision,
         )
     else:
+        # 日本語のLINE DistilBERTの場合はtrust_remote_code=Trueが必要
         tokenizer = AutoTokenizer.from_pretrained(
             pretrained_model_name_or_path,
             cache_dir=cache_dir,
             revision=revision,
+            trust_remote_code=trust_remote_code,
         )
     __loaded_tokenizers[language] = tokenizer
     logger.info(

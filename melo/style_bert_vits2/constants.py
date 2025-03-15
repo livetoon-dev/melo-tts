@@ -20,7 +20,7 @@ class Languages(StrEnum):
 
 # 言語ごとのデフォルトの BERT トークナイザーのパス
 DEFAULT_BERT_TOKENIZER_PATHS = {
-    Languages.JP: "ku-nlp/deberta-v2-large-japanese-char-wwm",
+    Languages.JP: "line-corporation/line-distilbert-base-japanese",
     Languages.EN: BASE_DIR / "bert" / "deberta-v3-large",
     Languages.ZH: BASE_DIR / "bert" / "chinese-roberta-wwm-ext-large",
 }

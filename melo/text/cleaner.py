@@ -82,16 +82,16 @@ def clean_text_bert(text, language, device=None, use_sudachi=False):
             
             # BERTモデルがまだ読み込まれていない場合は読み込む
             try:
-                # Hugging Faceから直接モデルを読み込む
-                bert_models.load_model(Languages.JP, "ku-nlp/deberta-v2-large-japanese-char-wwm")
-                bert_models.load_tokenizer(Languages.JP, "ku-nlp/deberta-v2-large-japanese-char-wwm")
+                # LINE DistilBERTモデルを読み込む
+                bert_models.load_model(Languages.JP, "line-corporation/line-distilbert-base-japanese")
+                bert_models.load_tokenizer(Languages.JP, "line-corporation/line-distilbert-base-japanese", trust_remote_code=True)
                 # BERT特徴量抽出
                 bert = extract_bert_feature(sbv_norm_text, word2ph, device=device)
             except Exception as e:
                 print(f"BERT feature extraction failed: {str(e)}")
                 print("Using dummy BERT features instead")
                 # ダミーのBERT特徴量を生成
-                bert_dim = 1024
+                bert_dim = 768  # LINE DistilBERTは768次元
                 bert_length = len(phones)
                 bert = torch.zeros((bert_dim, bert_length)).to(device if device else "cpu")
             

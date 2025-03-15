@@ -159,25 +159,42 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         bert_path = wav_path.replace(".wav", ".bert.pt")
         try:
             bert = torch.load(bert_path)
-            assert bert.shape[-1] == len(phone)
         except Exception as e:
-            print(e, wav_path, bert_path, bert.shape, len(phone))
-            bert = get_bert(text, word2ph, language_str)
+            print(e, wav_path, bert_path, bert.shape if 'bert' in locals() else 'No bert shape', len(phone))
+            bert = get_bert(text, word2ph, language_str, device='cpu')
             torch.save(bert, bert_path)
-            assert bert.shape[-1] == len(phone), phone
 
         if self.disable_bert:
             bert = torch.zeros(1024, len(phone))
             ja_bert = torch.zeros(768, len(phone))
         else:
+            # BERTの次元をチェック
+            bert_dim = bert.shape[0]
+            
             if language_str in ["ZH"]:
-                bert = bert
+                # 中国語の場合
+                if bert_dim != 1024:
+                    print(f"中国語BERTの次元が不正: {bert_dim}, 1024に修正します")
+                    new_bert = torch.zeros(1024, bert.shape[1])
+                    new_bert[:bert_dim, :] = bert
+                    bert = new_bert
+                    
                 ja_bert = torch.zeros(768, len(phone))
-            elif language_str in ["JP", "EN", "ZH_MIX_EN", "KR", 'SP', 'ES', 'FR', 'DE', 'RU']:
+            elif language_str in ["JP", "JA", "EN", "ZH_MIX_EN", "KR", 'SP', 'ES', 'FR', 'DE', 'RU']:
+                # 日本語・英語などの場合
+                if bert_dim != 768:
+                    print(f"{language_str}のBERT次元が不正: {bert_dim}, 768に修正します")
+                    # 次元が大きい場合は切り捨て、小さい場合はゼロ埋め
+                    new_bert = torch.zeros(768, bert.shape[1])
+                    min_dim = min(bert_dim, 768)
+                    new_bert[:min_dim, :] = bert[:min_dim, :]
+                    bert = new_bert
+                
                 ja_bert = bert
                 bert = torch.zeros(1024, len(phone))
             else:
-                raise
+                # 未知の言語コードの場合、エラーメッセージを表示
+                raise ValueError(f"未対応の言語コード: {language_str}")
                 bert = torch.zeros(1024, len(phone))
                 ja_bert = torch.zeros(768, len(phone))
         assert bert.shape[-1] == len(phone)

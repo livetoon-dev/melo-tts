@@ -40,18 +40,32 @@ def extract_bert_feature(
 
     style_res_mean = None
     with torch.no_grad():
-        tokenizer = bert_models.load_tokenizer(Languages.JP)
+        tokenizer = bert_models.load_tokenizer(Languages.JP, trust_remote_code=True)
         inputs = tokenizer(text, return_tensors="pt")
         for i in inputs:
             inputs[i] = inputs[i].to(device)  # type: ignore
+        
+        # LINE DistilBERTモデルの場合はoutput_hidden_statesを指定
         res = model(**inputs, output_hidden_states=True)
-        res = torch.cat(res["hidden_states"][-3:-2], -1)[0].cpu()
+        
+        # DistilBERTは6層なので最終3層のみを取得
+        if len(res["hidden_states"]) <= 6:  # DistilBERTの場合
+            res = torch.cat(res["hidden_states"][-2:-1], -1)[0].cpu()
+        else:  # 従来のDeBERTaの場合
+            res = torch.cat(res["hidden_states"][-3:-2], -1)[0].cpu()
+            
         if assist_text:
             style_inputs = tokenizer(assist_text, return_tensors="pt")
             for i in style_inputs:
                 style_inputs[i] = style_inputs[i].to(device)  # type: ignore
             style_res = model(**style_inputs, output_hidden_states=True)
-            style_res = torch.cat(style_res["hidden_states"][-3:-2], -1)[0].cpu()
+            
+            # DistilBERTの場合の対応
+            if len(style_res["hidden_states"]) <= 6:
+                style_res = torch.cat(style_res["hidden_states"][-2:-1], -1)[0].cpu()
+            else:
+                style_res = torch.cat(style_res["hidden_states"][-3:-2], -1)[0].cpu()
+                
             style_res_mean = style_res.mean(0)
 
     assert len(word2ph) == len(text) + 2, text

@@ -1,8 +1,12 @@
+#!/bin/bash
+
+# ランダムポート使用バージョン
 CONFIG=$1
 GPUS=$2
 MODEL_NAME=pretrain_vtuber
 
-PORT=20902
+# ランダムポートを生成 (10000-65535の範囲)
+PORT=$(( RANDOM % 55535 + 10000 ))
 
 # 仮想環境のパス
 VENV_PATH="/home/nagashimadaichi/dev/melo-tts/.venv"
@@ -17,6 +21,8 @@ export TORCH_DISTRIBUTED_DEBUG=DETAIL
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 export CUDA_LAUNCH_BLOCKING=1
 
+echo "Using port: $PORT"
+
 # 仮想環境内のtorchrunを使用
 $VENV_PATH/bin/torchrun --nproc_per_node=$GPUS \
         --master_port=$PORT \
@@ -28,4 +34,4 @@ do
     kill -9 $PID
 done
 sleep 30
-done
+done 
