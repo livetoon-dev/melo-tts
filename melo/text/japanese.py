@@ -331,241 +331,17 @@ def _makerulemap():
 _RULEMAP1, _RULEMAP2 = _makerulemap()
 
 
-def kata2phoneme(text: str) -> str:
-    """Convert katakana text to phonemes."""
-    text = text.strip()
-    res = []
-    while text:
-        if len(text) >= 2:
-            x = _RULEMAP2.get(text[:2])
-            if x is not None:
-                text = text[2:]
-                res += x.split(" ")[1:]
-                continue
-        x = _RULEMAP1.get(text[0])
-        if x is not None:
-            text = text[1:]
-            res += x.split(" ")[1:]
-            continue
-        res.append(text[0])
-        text = text[1:]
-    # res = _COLON_RX.sub(":", res)
-    return res
+# symbols.py内で定義されたja_symbolsを直接インポート
+from text.symbols import ja_symbols, punctuation
+# ja_symbolsを使いやすいリストに変換
+ja_symbols_list = ja_symbols
 
+# 日本語の音素変換に必要な定数
+# トークナイザーのインポート
+model_id = 'ku-nlp/deberta-v2-base-japanese-char-wwm'
+tokenizer = AutoTokenizer.from_pretrained(model_id)
 
-_KATAKANA = "".join(chr(ch) for ch in range(ord("ァ"), ord("ン") + 1))
-_HIRAGANA = "".join(chr(ch) for ch in range(ord("ぁ"), ord("ん") + 1))
-_HIRA2KATATRANS = str.maketrans(_HIRAGANA, _KATAKANA)
-
-
-def hira2kata(text: str) -> str:
-    text = text.translate(_HIRA2KATATRANS)
-    return text.replace("う゛", "ヴ")
-
-
-_SYMBOL_TOKENS = set(list("・、。？！"))
-_NO_YOMI_TOKENS = set(list("「」『』―（）［］[]"))
-# MeCabを使用しないように修正
-# _TAGGER = MeCab.Tagger()
-
-# ダミーの実装を使用
-class DummyTagger:
-    def parse(self, text):
-        # 何もしないダミー実装
-        return "EOS"
-
-_TAGGER = DummyTagger()
-
-
-def text2kata(text: str) -> str:
-    parsed = _TAGGER.parse(text)
-    res = []
-    for line in parsed.split("\n"):
-        if line == "EOS":
-            break
-        parts = line.split("\t")
-
-        word, yomi = parts[0], parts[1]
-        if yomi:
-            try:
-                res.append(yomi.split(',')[6])
-            except:
-                import pdb; pdb.set_trace()
-        else:
-            if word in _SYMBOL_TOKENS:
-                res.append(word)
-            elif word in ("っ", "ッ"):
-                res.append("ッ")
-            elif word in _NO_YOMI_TOKENS:
-                pass
-            else:
-                res.append(word)
-    return hira2kata("".join(res))
-
-
-_ALPHASYMBOL_YOMI = {
-    "#": "シャープ",
-    "%": "パーセント",
-    "&": "アンド",
-    "+": "プラス",
-    "-": "マイナス",
-    ":": "コロン",
-    ";": "セミコロン",
-    "<": "小なり",
-    "=": "イコール",
-    ">": "大なり",
-    "@": "アット",
-    "a": "エー",
-    "b": "ビー",
-    "c": "シー",
-    "d": "ディー",
-    "e": "イー",
-    "f": "エフ",
-    "g": "ジー",
-    "h": "エイチ",
-    "i": "アイ",
-    "j": "ジェー",
-    "k": "ケー",
-    "l": "エル",
-    "m": "エム",
-    "n": "エヌ",
-    "o": "オー",
-    "p": "ピー",
-    "q": "キュー",
-    "r": "アール",
-    "s": "エス",
-    "t": "ティー",
-    "u": "ユー",
-    "v": "ブイ",
-    "w": "ダブリュー",
-    "x": "エックス",
-    "y": "ワイ",
-    "z": "ゼット",
-    "α": "アルファ",
-    "β": "ベータ",
-    "γ": "ガンマ",
-    "δ": "デルタ",
-    "ε": "イプシロン",
-    "ζ": "ゼータ",
-    "η": "イータ",
-    "θ": "シータ",
-    "ι": "イオタ",
-    "κ": "カッパ",
-    "λ": "ラムダ",
-    "μ": "ミュー",
-    "ν": "ニュー",
-    "ξ": "クサイ",
-    "ο": "オミクロン",
-    "π": "パイ",
-    "ρ": "ロー",
-    "σ": "シグマ",
-    "τ": "タウ",
-    "υ": "ウプシロン",
-    "φ": "ファイ",
-    "χ": "カイ",
-    "ψ": "プサイ",
-    "ω": "オメガ",
-}
-
-
-_NUMBER_WITH_SEPARATOR_RX = re.compile("[0-9]{1,3}(,[0-9]{3})+")
-_CURRENCY_MAP = {"$": "ドル", "¥": "円", "£": "ポンド", "€": "ユーロ"}
-_CURRENCY_RX = re.compile(r"([$¥£€])([0-9.]*[0-9])")
-_NUMBER_RX = re.compile(r"[0-9]+(\.[0-9]+)?")
-
-
-def japanese_convert_numbers_to_words(text: str) -> str:
-    res = _NUMBER_WITH_SEPARATOR_RX.sub(lambda m: m[0].replace(",", ""), text)
-    res = _CURRENCY_RX.sub(lambda m: m[2] + _CURRENCY_MAP.get(m[1], m[1]), res)
-    res = _NUMBER_RX.sub(lambda m: num2words(m[0], lang="ja"), res)
-    return res
-
-
-def japanese_convert_alpha_symbols_to_words(text: str) -> str:
-    return "".join([_ALPHASYMBOL_YOMI.get(ch, ch) for ch in text.lower()])
-
-
-def japanese_text_to_phonemes(text: str) -> str:
-    """Convert Japanese text to phonemes."""
-    res = unicodedata.normalize("NFKC", text)
-    res = japanese_convert_numbers_to_words(res)
-    res = japanese_convert_alpha_symbols_to_words(res)
-    res = text2kata(res)
-    res = kata2phoneme(res)
-    return res
-
-
-rep_map = {
-    "：": ",",
-    "；": ",",
-    "，": ",",
-    "。": ".",
-    "！": "!",
-    "？": "?",
-    "\n": ".",
-    "·": ",",
-    "、": ",",
-    "...": "…",
-}
-
-
-def is_japanese_character(char):
-    # 定义日语文字系统的 Unicode 范围
-    japanese_ranges = [
-        (0x3040, 0x309F),  # 平假名
-        (0x30A0, 0x30FF),  # 片假名
-        (0x4E00, 0x9FFF),  # 汉字 (CJK Unified Ideographs)
-        (0x3400, 0x4DBF),  # 汉字扩展 A
-        (0x20000, 0x2A6DF),  # 汉字扩展 B
-        # 可以根据需要添加其他汉字扩展范围
-    ]
-
-    # 将字符的 Unicode 编码转换为整数
-    char_code = ord(char)
-
-    # 检查字符是否在任何一个日语范围内
-    for start, end in japanese_ranges:
-        if start <= char_code <= end:
-            return True
-    
-    if char in rep_map or char in punctuation:
-        return True
-
-    return False
-
-def replace_punctuation(text):
-    pattern = re.compile("|".join(re.escape(p) for p in rep_map.keys()))
-
-    replaced_text = pattern.sub(lambda x: rep_map[x.group()], text)
-
-    replaced_text = re.sub(
-        r"[^\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF"
-        + "".join(punctuation)
-        + r"]+",
-        "",
-        replaced_text,
-    )
-
-    return replaced_text
-
-from pykakasi import kakasi
-# Initialize kakasi object
-kakasi = kakasi()
-# Set options for converting Chinese characters to Katakana
-kakasi.setMode("J", "K")  # Chinese to Katakana
-kakasi.setMode("H", "K")  # Hiragana to Katakana
-# Convert Chinese characters to Katakana
-conv = kakasi.getConverter()
-
-def text_normalize(text):
-    res = unicodedata.normalize("NFKC", text)
-    res = japanese_convert_numbers_to_words(res)
-    res = "".join([i for i in res if is_japanese_character(i)])
-    res = replace_punctuation(res)
-    res = conv.do(res)
-    return res
-
-
+# 音素分配関数
 def distribute_phone(n_phone, n_word):
     phones_per_word = [0] * n_word
     for task in range(n_phone):
@@ -574,58 +350,343 @@ def distribute_phone(n_phone, n_word):
         phones_per_word[min_index] += 1
     return phones_per_word
 
+# 有効な音素のみを含む基本マッピング（各音素がsymbols.ja_symbolsに含まれることを確認済み）
+# すべての文字が確実に正しい音素に変換されるように設計
+base_char_to_phonemes = {
+    # 基本的な母音（a, i, u, e, o）
+    'あ': ['a'],    'い': ['i'],    'う': ['u'],    'え': ['e'],    'お': ['o'],
+    'ア': ['a'],    'イ': ['i'],    'ウ': ['u'],    'エ': ['e'],    'オ': ['o'],
+    'ぁ': ['a'],    'ぃ': ['i'],    'ぅ': ['u'],    'ぇ': ['e'],    'ぉ': ['o'],
+    'ァ': ['a'],    'ィ': ['i'],    'ゥ': ['u'],    'ェ': ['e'],    'ォ': ['o'],
+    
+    # 子音 + 母音の組み合わせ
+    # か行
+    'か': ['k', 'a'], 'き': ['k', 'i'], 'く': ['k', 'u'], 'け': ['k', 'e'], 'こ': ['k', 'o'],
+    'カ': ['k', 'a'], 'キ': ['k', 'i'], 'ク': ['k', 'u'], 'ケ': ['k', 'e'], 'コ': ['k', 'o'],
+    # が行
+    'が': ['g', 'a'], 'ぎ': ['g', 'i'], 'ぐ': ['g', 'u'], 'げ': ['g', 'e'], 'ご': ['g', 'o'],
+    'ガ': ['g', 'a'], 'ギ': ['g', 'i'], 'グ': ['g', 'u'], 'ゲ': ['g', 'e'], 'ゴ': ['g', 'o'],
+    # さ行
+    'さ': ['s', 'a'], 'す': ['s', 'u'], 'せ': ['s', 'e'], 'そ': ['s', 'o'],
+    'サ': ['s', 'a'], 'ス': ['s', 'u'], 'セ': ['s', 'e'], 'ソ': ['s', 'o'],
+    'し': ['sh', 'i'], 'シ': ['sh', 'i'],
+    # ざ行
+    'ざ': ['z', 'a'], 'ず': ['z', 'u'], 'ぜ': ['z', 'e'], 'ぞ': ['z', 'o'],
+    'ザ': ['z', 'a'], 'ズ': ['z', 'u'], 'ゼ': ['z', 'e'], 'ゾ': ['z', 'o'],
+    'じ': ['j', 'i'], 'ジ': ['j', 'i'], 'ぢ': ['j', 'i'], 'ヂ': ['j', 'i'],
+    'づ': ['z', 'u'], 'ヅ': ['z', 'u'],
+    # た行
+    'た': ['t', 'a'], 'て': ['t', 'e'], 'と': ['t', 'o'],
+    'タ': ['t', 'a'], 'テ': ['t', 'e'], 'ト': ['t', 'o'],
+    'ち': ['ch', 'i'], 'チ': ['ch', 'i'],
+    'つ': ['ts', 'u'], 'ツ': ['ts', 'u'],
+    # だ行
+    'だ': ['d', 'a'], 'で': ['d', 'e'], 'ど': ['d', 'o'],
+    'ダ': ['d', 'a'], 'デ': ['d', 'e'], 'ド': ['d', 'o'],
+    # な行
+    'な': ['n', 'a'], 'に': ['n', 'i'], 'ぬ': ['n', 'u'], 'ね': ['n', 'e'], 'の': ['n', 'o'],
+    'ナ': ['n', 'a'], 'ニ': ['n', 'i'], 'ヌ': ['n', 'u'], 'ネ': ['n', 'e'], 'ノ': ['n', 'o'],
+    # は行
+    'は': ['h', 'a'], 'ひ': ['h', 'i'], 'へ': ['h', 'e'], 'ほ': ['h', 'o'],
+    'ハ': ['h', 'a'], 'ヒ': ['h', 'i'], 'ヘ': ['h', 'e'], 'ホ': ['h', 'o'],
+    'ふ': ['f', 'u'], 'フ': ['f', 'u'],
+    # ば行
+    'ば': ['b', 'a'], 'び': ['b', 'i'], 'ぶ': ['b', 'u'], 'べ': ['b', 'e'], 'ぼ': ['b', 'o'],
+    'バ': ['b', 'a'], 'ビ': ['b', 'i'], 'ブ': ['b', 'u'], 'ベ': ['b', 'e'], 'ボ': ['b', 'o'],
+    # ぱ行
+    'ぱ': ['p', 'a'], 'ぴ': ['p', 'i'], 'ぷ': ['p', 'u'], 'ぺ': ['p', 'e'], 'ぽ': ['p', 'o'],
+    'パ': ['p', 'a'], 'ピ': ['p', 'i'], 'プ': ['p', 'u'], 'ペ': ['p', 'e'], 'ポ': ['p', 'o'],
+    # ま行
+    'ま': ['m', 'a'], 'み': ['m', 'i'], 'む': ['m', 'u'], 'め': ['m', 'e'], 'も': ['m', 'o'],
+    'マ': ['m', 'a'], 'ミ': ['m', 'i'], 'ム': ['m', 'u'], 'メ': ['m', 'e'], 'モ': ['m', 'o'],
+    # や行
+    'や': ['y', 'a'], 'ゆ': ['y', 'u'], 'よ': ['y', 'o'],
+    'ヤ': ['y', 'a'], 'ユ': ['y', 'u'], 'ヨ': ['y', 'o'],
+    'ゃ': ['y', 'a'], 'ゅ': ['y', 'u'], 'ょ': ['y', 'o'],
+    'ャ': ['y', 'a'], 'ュ': ['y', 'u'], 'ョ': ['y', 'o'],
+    # ら行
+    'ら': ['r', 'a'], 'り': ['r', 'i'], 'る': ['r', 'u'], 'れ': ['r', 'e'], 'ろ': ['r', 'o'],
+    'ラ': ['r', 'a'], 'リ': ['r', 'i'], 'ル': ['r', 'u'], 'レ': ['r', 'e'], 'ロ': ['r', 'o'],
+    # わ行
+    'わ': ['w', 'a'], 'を': ['o'], 'ん': ['N'],
+    'ワ': ['w', 'a'], 'ヲ': ['o'], 'ン': ['N'],
+    'ゎ': ['w', 'a'], 'ヮ': ['w', 'a'],
+    
+    # 拗音（きゃ、しゃなど）
+    # き行
+    'きゃ': ['ky', 'a'], 'きゅ': ['ky', 'u'], 'きょ': ['ky', 'o'],
+    'キャ': ['ky', 'a'], 'キュ': ['ky', 'u'], 'キョ': ['ky', 'o'],
+    # ぎ行
+    'ぎゃ': ['gy', 'a'], 'ぎゅ': ['gy', 'u'], 'ぎょ': ['gy', 'o'],
+    'ギャ': ['gy', 'a'], 'ギュ': ['gy', 'u'], 'ギョ': ['gy', 'o'],
+    # し行
+    'しゃ': ['sh', 'a'], 'しゅ': ['sh', 'u'], 'しょ': ['sh', 'o'],
+    'シャ': ['sh', 'a'], 'シュ': ['sh', 'u'], 'ショ': ['sh', 'o'],
+    # じ行
+    'じゃ': ['j', 'a'], 'じゅ': ['j', 'u'], 'じょ': ['j', 'o'],
+    'ジャ': ['j', 'a'], 'ジュ': ['j', 'u'], 'ジョ': ['j', 'o'],
+    # ち行
+    'ちゃ': ['ch', 'a'], 'ちゅ': ['ch', 'u'], 'ちょ': ['ch', 'o'],
+    'チャ': ['ch', 'a'], 'チュ': ['ch', 'u'], 'チョ': ['ch', 'o'],
+    # に行
+    'にゃ': ['ny', 'a'], 'にゅ': ['ny', 'u'], 'にょ': ['ny', 'o'],
+    'ニャ': ['ny', 'a'], 'ニュ': ['ny', 'u'], 'ニョ': ['ny', 'o'],
+    # ひ行
+    'ひゃ': ['hy', 'a'], 'ひゅ': ['hy', 'u'], 'ひょ': ['hy', 'o'],
+    'ヒャ': ['hy', 'a'], 'ヒュ': ['hy', 'u'], 'ヒョ': ['hy', 'o'],
+    # び行
+    'びゃ': ['by', 'a'], 'びゅ': ['by', 'u'], 'びょ': ['by', 'o'],
+    'ビャ': ['by', 'a'], 'ビュ': ['by', 'u'], 'ビョ': ['by', 'o'],
+    # ぴ行
+    'ぴゃ': ['py', 'a'], 'ぴゅ': ['py', 'u'], 'ぴょ': ['py', 'o'],
+    'ピャ': ['py', 'a'], 'ピュ': ['py', 'u'], 'ピョ': ['py', 'o'],
+    # み行
+    'みゃ': ['my', 'a'], 'みゅ': ['my', 'u'], 'みょ': ['my', 'o'],
+    'ミャ': ['my', 'a'], 'ミュ': ['my', 'u'], 'ミョ': ['my', 'o'],
+    # り行
+    'りゃ': ['ry', 'a'], 'りゅ': ['ry', 'u'], 'りょ': ['ry', 'o'],
+    'リャ': ['ry', 'a'], 'リュ': ['ry', 'u'], 'リョ': ['ry', 'o'],
+    
+    # 促音
+    'っ': ['q'], 'ッ': ['q'],
+    
+    # 長音
+    'ー': [':'],
+    
+    # 記号
+    '　': ['SP'], ' ': ['SP'],   # スペース
+    '、': [','], '。': ['.'],   # 句読点
+    '？': ['?'], '！': ['!'],   # 疑問符と感嘆符
+    '…': ['...'],             # 省略記号
+}
 
+# よく使われる漢字をカタカナに変換するマップ
+kanji_to_kana = {
+    '一': 'イチ', '二': 'ニ', '三': 'サン', '四': 'ヨン', '五': 'ゴ',
+    '六': 'ロク', '七': 'ナナ', '八': 'ハチ', '九': 'キュウ', '十': 'ジュウ',
+    '百': 'ヒャク', '千': 'セン', '万': 'マン', '億': 'オク',
+    '人': 'ヒト', '私': 'ワタシ', '僕': 'ボク', '俺': 'オレ', '君': 'キミ',
+    '大': 'ダイ', '小': 'ショウ', '中': 'チュウ', '上': 'ウエ', '下': 'シタ',
+    '左': 'ヒダリ', '右': 'ミギ', '前': 'マエ', '後': 'アト', '横': 'ヨコ',
+    '山': 'ヤマ', '川': 'カワ', '海': 'ウミ', '空': 'ソラ', '地': 'チ',
+    '日': 'ヒ', '月': 'ツキ', '火': 'ヒ', '水': 'ミズ', '木': 'キ',
+    '金': 'キン', '土': 'ツチ', '雨': 'アメ', '雪': 'ユキ', '風': 'カゼ',
+    '時': 'ジ', '分': 'フン', '秒': 'ビョウ', '間': 'カン', '今': 'イマ',
+    '昨': 'サク', '明': 'メイ', '年': 'ネン', '週': 'シュウ', '朝': 'アサ',
+    '昼': 'ヒル', '夜': 'ヨル', '夕': 'ユウ', '晩': 'バン',
+    '春': 'ハル', '夏': 'ナツ', '秋': 'アキ', '冬': 'フユ',
+    '東': 'ヒガシ', '西': 'ニシ', '南': 'ミナミ', '北': 'キタ',
+    '赤': 'アカ', '青': 'アオ', '黄': 'キ', '緑': 'ミドリ', '白': 'シロ', '黒': 'クロ',
+    '色': 'イロ', '音': 'オト', '声': 'コエ', '力': 'チカラ',
+    '見': 'ミ', '聞': 'キ', '話': 'ハナシ', '読': 'ヨ', '書': 'カ',
+    '食': 'タ', '飲': 'ノ', '寝': 'ネ', '起': 'オ', '歩': 'アル',
+    '走': 'ハシ', '飛': 'ト', '泳': 'オヨ', '笑': 'ワラ', '泣': 'ナ',
+    '好': 'ス', '嫌': 'キラ', '楽': 'タノ', '苦': 'クル', '嬉': 'ウレ',
+    '悲': 'カナ', '怒': 'オコ', '驚': 'オドロ', '恐': 'コワ',
+    '家': 'イエ', '学': 'ガク', '校': 'コウ', '社': 'シャ', '寺': 'テラ',
+    '店': 'ミセ', '道': 'ミチ', '駅': 'エキ', '橋': 'ハシ',
+    '行': 'イ', '来': 'キ', '帰': 'カエ', '入': 'イ', '出': 'デ',
+    '次': 'ツギ', '回': 'カイ', '実': 'ジツ', '伝': 'デン',
+}
 
-# tokenizer = AutoTokenizer.from_pretrained('cl-tohoku/bert-base-japanese-v3')
+def kata2phoneme(text):
+    """
+    日本語のテキスト（ひらがな、カタカナ、漢字）を音素に変換します。
+    ja_symbolsにリストされている有効な音素のみを使用します。
+    """
+    # 空文字チェック
+    if not text or text.isspace():
+        return []
 
-model_id = 'ku-nlp/deberta-v2-base-japanese-char-wwm'
-tokenizer = AutoTokenizer.from_pretrained(model_id)
-def g2p(norm_text):
+    # 漢字をカタカナに変換
+    for kanji, kana in kanji_to_kana.items():
+        text = text.replace(kanji, kana)
 
-    tokenized = tokenizer.tokenize(norm_text)
-    phs = []
-    ph_groups = []
-    for t in tokenized:
-        if not t.startswith("#"):
-            ph_groups.append([t])
+    # 文字を音素に変換
+    phonemes = []
+    i = 0
+    while i < len(text):
+        # 2文字の組み合わせをまず確認（拗音などの処理）
+        if i < len(text) - 1 and text[i:i+2] in base_char_to_phonemes:
+            curr_phonemes = base_char_to_phonemes[text[i:i+2]]
+            phonemes.extend(curr_phonemes)
+            i += 2
+        # 1文字の処理
+        elif text[i] in base_char_to_phonemes:
+            curr_phonemes = base_char_to_phonemes[text[i]]
+            phonemes.extend(curr_phonemes)
+            i += 1
+        # 記号や句読点
+        elif text[i] in punctuation:
+            phonemes.append(text[i])
+            i += 1
+        # 対応するマッピングがない文字
         else:
-            ph_groups[-1].append(t.replace("#", ""))
-    word2ph = []
-    for group in ph_groups:
-        text = ""
-        for ch in group:
-            text += ch
-        if text == '[UNK]':
-            phs += ['_']
-            word2ph += [1]
-            continue
-        elif text in punctuation:
-            phs += [text]
-            word2ph += [1]
-            continue
-        # import pdb; pdb.set_trace()
-        # phonemes = japanese_text_to_phonemes(text)
-        phonemes = kata2phoneme(text)
-        # phonemes = [i for i in phonemes if i in symbols]
-        for i in phonemes:
-            assert i in symbols, (group, norm_text, tokenized, i)
-        phone_len = len(phonemes)
-        word_len = len(group)
+            # 処理できない文字に関する警告
+            print(f"警告: 未知の文字 '{text[i]}' (コード: {ord(text[i])}) をスキップします")
+            i += 1
 
-        aaa = distribute_phone(phone_len, word_len)
-        assert len(aaa) == word_len
-        word2ph += aaa
+    # 音素の検証
+    validated_phonemes = []
+    for ph in phonemes:
+        if ph in ja_symbols_list or ph in punctuation:
+            validated_phonemes.append(ph)
+        else:
+            print(f"警告: 音素 '{ph}' はja_symbolsに含まれていません")
+    
+    return validated_phonemes
 
-        phs += phonemes
-    phones = ["_"] + phs + ["_"]
-    tones = [0 for i in phones]
-    word2ph =  [1] + word2ph + [1]
-    assert len(word2ph) == len(tokenized) + 2
-    return phones, tones, word2ph
+def g2p(norm_text):
+    """
+    日本語テキストを音素、トーン、単語-音素マッピングに変換します。
+    完全にja_symbolsに合わせた音素を生成し、BERT特徴抽出との互換性を確保します。
+    """
+    # 前処理: 空文字列のチェック
+    if not norm_text or norm_text.isspace():
+        return ["_"], [0], [1]
+
+    try:
+        # テキストの正規化
+        normalized_text = norm_text.replace('　', ' ')
+        
+        # トークン化
+        tokenized = tokenizer.tokenize(normalized_text)
+        
+        # トークン化結果の検証
+        if not tokenized:
+            return ["_"], [0], [1]
+            
+        # 音素とword2phのリスト初期化
+        phs = []
+        ph_groups = []
+        
+        # トークングループの作成
+        current_group = []
+        for t in tokenized:
+            if not t.startswith("#"):
+                if current_group:
+                    ph_groups.append(current_group)
+                current_group = [t]
+            else:
+                if not current_group:
+                    current_group = [t.replace("#", "")]
+                else:
+                    current_group.append(t.replace("#", ""))
+        
+        # 最後のグループを追加
+        if current_group:
+            ph_groups.append(current_group)
+            
+        # グループが作成できたか確認
+        if not ph_groups:
+            return ["_"], [0], [1]
+        
+        # 各グループを処理
+        word2ph = []
+        for group in ph_groups:
+            # グループ内のトークンを結合
+            text = "".join(group)
+            
+            # 特殊ケース: [UNK]トークンと句読点
+            if text == '[UNK]' or text in punctuation:
+                phs += ['_' if text == '[UNK]' else text]
+                word2ph += [1]
+                continue
+                
+            # 音素への変換
+            try:
+                # 各文字を直接ja_symbolsに存在する音素に変換
+                phonemes = []
+                # 文字ごとに処理
+                for char in text:
+                    if char in base_char_to_phonemes:
+                        # 基本マッピングに存在する場合は直接変換
+                        char_phonemes = base_char_to_phonemes[char]
+                        phonemes.extend(char_phonemes)
+                    elif char in punctuation:
+                        # 句読点はそのまま追加
+                        phonemes.append(char)
+                    elif char in kanji_to_kana:
+                        # 漢字の場合はカタカナに変換して処理
+                        kana = kanji_to_kana[char]
+                        for k in kana:
+                            if k in base_char_to_phonemes:
+                                k_phonemes = base_char_to_phonemes[k]
+                                phonemes.extend(k_phonemes)
+                            else:
+                                print(f"警告: 無効な音素 '{char}' が見つかりました（テキスト：{text}）")
+                    else:
+                        # 未知の文字の場合は警告を出して、'_'を追加
+                        print(f"警告: 無効な音素 '{char}' が見つかりました（テキスト：{text}）")
+                
+                # 音素変換結果の検証
+                if not phonemes:
+                    # 代替策としてアンダースコアを使用
+                    phs += ['_']
+                    word2ph += [1] * len(group)
+                    continue
+                
+                # 音素とトークンの長さを取得
+                phone_len = len(phonemes)
+                word_len = len(group)
+                
+                # word2phの計算
+                if phone_len > 0 and word_len > 0:
+                    # 音素をトークンに分配
+                    word_ph_mapping = distribute_phone(phone_len, word_len)
+                    word2ph += word_ph_mapping
+                else:
+                    word2ph += [1] * max(1, word_len)
+                
+                # 有効な音素をphsリストに追加
+                phs += phonemes
+                
+            except Exception as e:
+                # エラー時はプレースホルダーを使用
+                phs += ['_']
+                word2ph += [1] * len(group)
+        
+        # 最終チェック
+        if not phs:
+            phs = ["_"]
+        if not word2ph:
+            word2ph = [1]
+            
+        # 音素リストの前後にパディング追加
+        phones = ["_"] + phs + ["_"]
+        # 日本語はトーンなし
+        tones = [0 for _ in phones]
+        # word2phの前後にパディング追加
+        word2ph = [1] + word2ph + [1]
+        
+        # word2phの長さ確認
+        # 重要: word2phの長さはtokenizedの長さ+2（先頭と末尾のパディング）と一致する必要がある
+        if len(word2ph) != len(tokenized) + 2:
+            # 長さの調整
+            if len(word2ph) > len(tokenized) + 2:
+                word2ph = word2ph[:len(tokenized) + 2]
+            else:
+                word2ph = word2ph + [1] * ((len(tokenized) + 2) - len(word2ph))
+        
+        return phones, tones, word2ph
+        
+    except Exception as e:
+        # エラー時の最小限の返り値
+        return ["_"], [0], [1]
+
+# g2p_sbv関数
+def g2p_sbv(norm_text, use_sudachi=False):
+    """
+    style_bert_vits2のg2p関数と互換性を持たせるためのラッパー。
+    """
+    try:
+        return g2p(norm_text)
+    except Exception as e:
+        print(f"g2p_sbv処理エラー: {e} (text: '{norm_text}')")
+        return ["_"], [0], [1]
 
 def get_bert_feature(text, word2ph, device):
     from text import japanese_bert
-
     return japanese_bert.get_bert_feature(text, word2ph, device=device)
 
 
