@@ -292,6 +292,51 @@ language_tone_start_map = {
     "FR": num_zh_tones + num_ja_tones + num_en_tones + num_kr_tones + num_es_tones,
 }
 
+# 日本語の音素をmeloのシンボルと対応させるためのマッピング
+JP_PHONE_MAPPING = {
+    # 基本母音
+    'a': 'a',
+    'i': 'i',
+    'u': 'u',
+    'e': 'e',
+    'o': 'o',
+    
+    # 無声化母音
+    'U': 'u',  # スの無声化母音
+    'I': 'i',  # シの無声化母音
+    
+    # 特殊音素
+    'N': 'N',  # 撥音（ん）
+    'q': 'q',  # 促音（っ）
+    'cl': 'cl',  # 音素境界
+    
+    # 長音
+    ':': ':',  # 長音記号
+    
+    # 子音
+    'k': 'k', 's': 's', 't': 't', 'n': 'n',
+    'h': 'h', 'm': 'm', 'y': 'y', 'r': 'r',
+    'w': 'w', 'g': 'g', 'z': 'z', 'd': 'd',
+    'b': 'b', 'p': 'p', 'j': 'j', 'f': 'f',
+    'v': 'v',
+    
+    # 特殊な子音結合
+    'sh': 'sh', 'ch': 'ch', 'ts': 'ts',
+    'ky': 'ky', 'gy': 'gy', 'ny': 'ny',
+    'hy': 'hy', 'my': 'my', 'ry': 'ry',
+    'py': 'py', 'by': 'by', 'dy': 'dy',
+    'ty': 'ty',
+    
+    # 制御記号
+    'pau': 'pau',  # ポーズ
+    '_': '_',      # パディング
+    ' ': ' ',      # スペース
+    
+    # 句読点
+    ',': ',', '.': '.', '!': '!', '?': '?',
+    '...': '...'
+}
+
 if __name__ == "__main__":
     a = set(zh_symbols)
     b = set(en_symbols)

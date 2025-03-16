@@ -40,6 +40,7 @@ def load_model(
     pretrained_model_name_or_path: Optional[str] = None,
     cache_dir: Optional[str] = None,
     revision: str = "main",
+    trust_remote_code: bool = False,
 ) -> Union[PreTrainedModel, DebertaV2Model]:
     """
     指定された言語の BERT モデルをロードし、ロード済みの BERT モデルを返す。
@@ -59,6 +60,7 @@ def load_model(
         pretrained_model_name_or_path (Optional[str]): ロードする学習済みモデルの名前またはパス。指定しない場合はデフォルトのパスが利用される (デフォルト: None)
         cache_dir (Optional[str]): モデルのキャッシュディレクトリ。指定しない場合はデフォルトのキャッシュディレクトリが利用される (デフォルト: None)
         revision (str): モデルの Hugging Face 上の Git リビジョン。指定しない場合は最新の main ブランチの内容が利用される (デフォルト: None)
+        trust_remote_code (bool): モデルのロード時にリモートコードを信頼するかどうか。一部のモデル（LINE DistilBERTなど）では必要 (デフォルト: False)
 
     Returns:
         Union[PreTrainedModel, DebertaV2Model]: ロード済みの BERT モデル
@@ -87,7 +89,7 @@ def load_model(
         )
     else:
         model = AutoModelForMaskedLM.from_pretrained(
-            pretrained_model_name_or_path, cache_dir=cache_dir, revision=revision
+            pretrained_model_name_or_path, cache_dir=cache_dir, revision=revision, trust_remote_code=trust_remote_code
         )
     __loaded_models[language] = model
     logger.info(

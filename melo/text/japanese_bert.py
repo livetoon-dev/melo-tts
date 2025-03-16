@@ -1,158 +1,62 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import torch
-from transformers import AutoTokenizer, AutoModelForMaskedLM
+from style_bert_vits2.constants import Languages
+from style_bert_vits2.nlp import bert_models
+from .bert_based_tokenizer import create_japanese_bert_tokenizer
 import sys
 import numpy as np
 
-
+# モデルとトークナイザーのキャッシュ
 models = {}
 tokenizers = {}
-def get_bert_feature(text, word2ph, device=None, model_id='line-corporation/line-distilbert-base-japanese'):
-    """
-    日本語テキストからBERT特徴量を抽出する関数。
-    改善版：より厳密なエラーハンドリングとword2phとの整合性を確保。
-    """
-    global model
-    global tokenizer
 
-    # デバイスの設定
-    if (
-        sys.platform == "darwin"
-        and torch.backends.mps.is_available()
-        and device == "cpu"
-    ):
-        device = "mps"
-    if not device:
-        device = "cuda"
-        
-    # 入力検証
-    if not text or text.isspace():
-        print(f"BERT特徴抽出: 空のテキスト入力")
-        feature_dim = 768  # BERTの特徴量次元
-        dummy_feature = torch.zeros(feature_dim, 1).to(device)  # 転置形式に注意
-        return dummy_feature
+def get_bert_feature(text: str, word2ph: list, device=None, model_id='line-corporation/line-distilbert-base-japanese'):
+    """
+    テキストからBERT特徴量を抽出する
     
-    if not word2ph or not isinstance(word2ph, list) or len(word2ph) == 0:
-        print(f"BERT特徴抽出: 無効なword2ph - 長さまたは形式に問題があります")
-        feature_dim = 768
-        dummy_feature = torch.zeros(feature_dim, 1).to(device)
-        return dummy_feature
+    Args:
+        text (str): 入力テキスト
+        word2ph (list): 各トークンの音素数のリスト
+        device: 計算に使用するデバイス
+        model_id (str): 使用するBERTモデルのID
     
-    try:
-        # モデルとトークナイザの初期化
-        if model_id not in models:
-            try:
-                model = AutoModelForMaskedLM.from_pretrained(model_id, trust_remote_code=True).to(device)
-                models[model_id] = model
-                tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-                tokenizers[model_id] = tokenizer
-            except Exception as e:
-                print(f"BERT特徴抽出: モデル読み込みエラー")
-                return generate_alternative_features(text, len(word2ph), device)
+    Returns:
+        torch.Tensor: BERT特徴量
+    """
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    # BERTモデルとトークナイザーの準備
+    bert_tokenizer = create_japanese_bert_tokenizer()
+    bert = bert_models.load_model(Languages.JP, model_id, trust_remote_code=True)
+    bert.eval()
+    bert.to(device)
+    
+    # テキストのトークン化とBERT特徴量の抽出
+    with torch.no_grad():
+        tokens = bert_tokenizer.get_bert_input(text)
+        tokens = {k: v.to(device) for k, v in tokens.items()}
+        outputs = bert(**tokens)
+        # MaskedLMOutputからhidden_statesを取得
+        if hasattr(outputs, 'hidden_states'):
+            hidden_states = outputs.hidden_states[-1][0]  # 最後の層の隠れ状態を使用
         else:
-            model = models[model_id]
-            tokenizer = tokenizers[model_id]
-        
-        # テキストのトークン化
-        try:
-            inputs = tokenizer(text, return_tensors="pt")
-            tokenized = tokenizer.tokenize(text)
-            
-            # トークン化結果の検証
-            if not tokenized or not inputs or "input_ids" not in inputs:
-                print(f"BERT特徴抽出: トークン化失敗")
-                return generate_alternative_features(text, len(word2ph), device)
-                
-            # 入力をデバイスに移動
-            for i in inputs:
-                inputs[i] = inputs[i].to(device)
-            
-            # BERTモデルによる特徴量抽出
-            with torch.no_grad():
-                # モデル実行
-                outputs = model(**inputs, output_hidden_states=True)
-                
-                # 最後の3層目を取得 (最適な表現層)
-                hidden_states = outputs["hidden_states"][-3]
-                
-                # バッチの最初の要素を取得
-                features = hidden_states[0].cpu()
-                
-                # トークンの長さチェック - [CLS]と[SEP]を除外
-                if len(tokenized) + 2 == features.shape[0]:  # +2 は [CLS] と [SEP] のため
-                    # 特殊トークンを除外
-                    features = features[1:-1]
-                
-                # 特徴量とword2phの長さの不一致をチェック
-                if features.shape[0] != len(word2ph):
-                    # 長さの調整 (短い方に合わせる)
-                    min_len = min(features.shape[0], len(word2ph))
-                    if min_len == 0:
-                        print(f"BERT特徴抽出: 特徴量またはword2phの長さが0")
-                        return generate_alternative_features(text, len(word2ph), device)
-                        
-                    features = features[:min_len]
-                    word2ph = word2ph[:min_len]
-                    
-        except Exception as e:
-            print(f"BERT特徴抽出: 特徴抽出処理エラー")
-            return generate_alternative_features(text, len(word2ph), device)
-
-        # 音素レベルの特徴量に変換
-        try:
-            # 各単語の音素数を検証
-            word_ph_lengths = []
-            for ph_len in word2ph:
-                if ph_len <= 0:
-                    word_ph_lengths.append(1)
-                else:
-                    word_ph_lengths.append(ph_len)
-                    
-            # 音素レベルの特徴量リスト
-            phone_level_features = []
-            
-            # 各単語を対応する音素数だけ拡張
-            for i, ph_len in enumerate(word_ph_lengths):
-                if i >= features.shape[0]:
-                    print(f"BERT特徴抽出: インデックスエラー - 特徴量の範囲外アクセス")
-                    break
-                
-                # 単語の特徴量を取得して音素数だけ複製
-                word_feature = features[i]
-                phone_features = word_feature.unsqueeze(0).repeat(ph_len, 1)
-                phone_level_features.append(phone_features)
-            
-            # 結果の検証
-            if not phone_level_features:
-                print(f"BERT特徴抽出: 音素レベル特徴量生成失敗")
-                return generate_alternative_features(text, sum(word_ph_lengths), device)
-                
-            # すべての音素レベル特徴量を結合
-            phone_level_feature = torch.cat(phone_level_features, dim=0)
-            
-            # 次元チェック
-            feature_dim = 768  # 期待される特徴量の次元
-            if phone_level_feature.shape[1] != feature_dim:
-                # 次元の調整 (パディングまたは切り詰め)
-                if phone_level_feature.shape[1] < feature_dim:
-                    padding = torch.zeros(phone_level_feature.shape[0], feature_dim - phone_level_feature.shape[1])
-                    phone_level_feature = torch.cat([phone_level_feature, padding], dim=1)
-                else:
-                    phone_level_feature = phone_level_feature[:, :feature_dim]
-            
-            # NaNやInfをチェック
-            if torch.isnan(phone_level_feature).any() or torch.isinf(phone_level_feature).any():
-                phone_level_feature = torch.nan_to_num(phone_level_feature, nan=0.0, posinf=0.0, neginf=0.0)
-            
-            # 特徴量を転置して返す (音素 x 特徴量次元) -> (特徴量次元 x 音素)
-            return phone_level_feature.T.to(device)
-            
-        except Exception as e:
-            print(f"BERT特徴抽出: 音素レベル特徴量変換エラー")
-            return generate_alternative_features(text, len(word2ph), device)
-            
-    except Exception as e:
-        print(f"BERT特徴抽出: 全体的なエラー")
-        return generate_alternative_features(text, len(word2ph), device)
+            # 代替方法：logitsから特徴量を取得
+            hidden_states = outputs.logits[0]
+    
+    # word2phに基づいて特徴量を音素単位に展開
+    phone_level_features = []
+    for idx, ph_len in enumerate(word2ph):
+        if ph_len > 0:  # 音素が存在する場合
+            # 同じ特徴量をph_len回繰り返す
+            phone_level_features.extend([hidden_states[idx]] * ph_len)
+    
+    # テンソルに変換して転置
+    phone_level_features = torch.stack(phone_level_features).transpose(0, 1)
+    
+    return phone_level_features
 
 def generate_alternative_features(text, length, device):
     """

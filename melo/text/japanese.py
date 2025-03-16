@@ -350,16 +350,21 @@ def distribute_phone(n_phone, n_word):
         phones_per_word[min_index] += 1
     return phones_per_word
 
-# 有効な音素のみを含む基本マッピング（各音素がsymbols.ja_symbolsに含まれることを確認済み）
-# すべての文字が確実に正しい音素に変換されるように設計
-base_char_to_phonemes = {
-    # 基本的な母音（a, i, u, e, o）
+# 利用可能な音素を確認（ja_symbolsリストから）
+valid_phonemes = set(ja_symbols)
+valid_phonemes.update(punctuation)  # 句読点も有効な音素として追加
+
+# print("利用可能な音素リスト:", sorted(list(valid_phonemes)))
+
+# 文字から音素へのマッピング
+# 必ず ja_symbols に含まれる音素のみを使用する
+char_to_phonemes = {
+    # 基本母音
     'あ': ['a'],    'い': ['i'],    'う': ['u'],    'え': ['e'],    'お': ['o'],
     'ア': ['a'],    'イ': ['i'],    'ウ': ['u'],    'エ': ['e'],    'オ': ['o'],
     'ぁ': ['a'],    'ぃ': ['i'],    'ぅ': ['u'],    'ぇ': ['e'],    'ぉ': ['o'],
     'ァ': ['a'],    'ィ': ['i'],    'ゥ': ['u'],    'ェ': ['e'],    'ォ': ['o'],
     
-    # 子音 + 母音の組み合わせ
     # か行
     'か': ['k', 'a'], 'き': ['k', 'i'], 'く': ['k', 'u'], 'け': ['k', 'e'], 'こ': ['k', 'o'],
     'カ': ['k', 'a'], 'キ': ['k', 'i'], 'ク': ['k', 'u'], 'ケ': ['k', 'e'], 'コ': ['k', 'o'],
@@ -413,37 +418,26 @@ base_char_to_phonemes = {
     'ゎ': ['w', 'a'], 'ヮ': ['w', 'a'],
     
     # 拗音（きゃ、しゃなど）
-    # き行
     'きゃ': ['ky', 'a'], 'きゅ': ['ky', 'u'], 'きょ': ['ky', 'o'],
     'キャ': ['ky', 'a'], 'キュ': ['ky', 'u'], 'キョ': ['ky', 'o'],
-    # ぎ行
     'ぎゃ': ['gy', 'a'], 'ぎゅ': ['gy', 'u'], 'ぎょ': ['gy', 'o'],
     'ギャ': ['gy', 'a'], 'ギュ': ['gy', 'u'], 'ギョ': ['gy', 'o'],
-    # し行
     'しゃ': ['sh', 'a'], 'しゅ': ['sh', 'u'], 'しょ': ['sh', 'o'],
     'シャ': ['sh', 'a'], 'シュ': ['sh', 'u'], 'ショ': ['sh', 'o'],
-    # じ行
     'じゃ': ['j', 'a'], 'じゅ': ['j', 'u'], 'じょ': ['j', 'o'],
     'ジャ': ['j', 'a'], 'ジュ': ['j', 'u'], 'ジョ': ['j', 'o'],
-    # ち行
     'ちゃ': ['ch', 'a'], 'ちゅ': ['ch', 'u'], 'ちょ': ['ch', 'o'],
     'チャ': ['ch', 'a'], 'チュ': ['ch', 'u'], 'チョ': ['ch', 'o'],
-    # に行
     'にゃ': ['ny', 'a'], 'にゅ': ['ny', 'u'], 'にょ': ['ny', 'o'],
     'ニャ': ['ny', 'a'], 'ニュ': ['ny', 'u'], 'ニョ': ['ny', 'o'],
-    # ひ行
     'ひゃ': ['hy', 'a'], 'ひゅ': ['hy', 'u'], 'ひょ': ['hy', 'o'],
     'ヒャ': ['hy', 'a'], 'ヒュ': ['hy', 'u'], 'ヒョ': ['hy', 'o'],
-    # び行
     'びゃ': ['by', 'a'], 'びゅ': ['by', 'u'], 'びょ': ['by', 'o'],
     'ビャ': ['by', 'a'], 'ビュ': ['by', 'u'], 'ビョ': ['by', 'o'],
-    # ぴ行
     'ぴゃ': ['py', 'a'], 'ぴゅ': ['py', 'u'], 'ぴょ': ['py', 'o'],
     'ピャ': ['py', 'a'], 'ピュ': ['py', 'u'], 'ピョ': ['py', 'o'],
-    # み行
     'みゃ': ['my', 'a'], 'みゅ': ['my', 'u'], 'みょ': ['my', 'o'],
     'ミャ': ['my', 'a'], 'ミュ': ['my', 'u'], 'ミョ': ['my', 'o'],
-    # り行
     'りゃ': ['ry', 'a'], 'りゅ': ['ry', 'u'], 'りょ': ['ry', 'o'],
     'リャ': ['ry', 'a'], 'リュ': ['ry', 'u'], 'リョ': ['ry', 'o'],
     
@@ -453,95 +447,135 @@ base_char_to_phonemes = {
     # 長音
     'ー': [':'],
     
-    # 記号
+    # 記号類
     '　': ['SP'], ' ': ['SP'],   # スペース
     '、': [','], '。': ['.'],   # 句読点
     '？': ['?'], '！': ['!'],   # 疑問符と感嘆符
     '…': ['...'],             # 省略記号
 }
 
-# よく使われる漢字をカタカナに変換するマップ
+# 漢字→カタカナ変換テーブル
 kanji_to_kana = {
+    # 数字
     '一': 'イチ', '二': 'ニ', '三': 'サン', '四': 'ヨン', '五': 'ゴ',
     '六': 'ロク', '七': 'ナナ', '八': 'ハチ', '九': 'キュウ', '十': 'ジュウ',
     '百': 'ヒャク', '千': 'セン', '万': 'マン', '億': 'オク',
-    '人': 'ヒト', '私': 'ワタシ', '僕': 'ボク', '俺': 'オレ', '君': 'キミ',
-    '大': 'ダイ', '小': 'ショウ', '中': 'チュウ', '上': 'ウエ', '下': 'シタ',
-    '左': 'ヒダリ', '右': 'ミギ', '前': 'マエ', '後': 'アト', '横': 'ヨコ',
-    '山': 'ヤマ', '川': 'カワ', '海': 'ウミ', '空': 'ソラ', '地': 'チ',
-    '日': 'ヒ', '月': 'ツキ', '火': 'ヒ', '水': 'ミズ', '木': 'キ',
-    '金': 'キン', '土': 'ツチ', '雨': 'アメ', '雪': 'ユキ', '風': 'カゼ',
-    '時': 'ジ', '分': 'フン', '秒': 'ビョウ', '間': 'カン', '今': 'イマ',
-    '昨': 'サク', '明': 'メイ', '年': 'ネン', '週': 'シュウ', '朝': 'アサ',
-    '昼': 'ヒル', '夜': 'ヨル', '夕': 'ユウ', '晩': 'バン',
-    '春': 'ハル', '夏': 'ナツ', '秋': 'アキ', '冬': 'フユ',
+    # 代名詞
+    '私': 'ワタシ', '僕': 'ボク', '俺': 'オレ', '君': 'キミ', '彼': 'カレ', '彼女': 'カノジョ',
+    # 方向・位置
+    '上': 'ウエ', '下': 'シタ', '左': 'ヒダリ', '右': 'ミギ', '前': 'マエ', '後': 'アト', '横': 'ヨコ',
     '東': 'ヒガシ', '西': 'ニシ', '南': 'ミナミ', '北': 'キタ',
-    '赤': 'アカ', '青': 'アオ', '黄': 'キ', '緑': 'ミドリ', '白': 'シロ', '黒': 'クロ',
-    '色': 'イロ', '音': 'オト', '声': 'コエ', '力': 'チカラ',
-    '見': 'ミ', '聞': 'キ', '話': 'ハナシ', '読': 'ヨ', '書': 'カ',
+    # 自然
+    '山': 'ヤマ', '川': 'カワ', '海': 'ウミ', '空': 'ソラ', '地': 'チ', '森': 'モリ',
+    '雨': 'アメ', '雪': 'ユキ', '風': 'カゼ', '火': 'ヒ', '水': 'ミズ', '木': 'キ', '草': 'クサ',
+    # 時間
+    '時': 'ジ', '分': 'フン', '秒': 'ビョウ', '間': 'カン', '今': 'イマ', '昨': 'サク', '明': 'メイ',
+    '年': 'ネン', '月': 'ツキ', '日': 'ヒ', '曜': 'ヨウ', '週': 'シュウ',
+    '朝': 'アサ', '昼': 'ヒル', '夜': 'ヨル', '夕': 'ユウ', '晩': 'バン',
+    '春': 'ハル', '夏': 'ナツ', '秋': 'アキ', '冬': 'フユ',
+    # 色
+    '赤': 'アカ', '青': 'アオ', '黄': 'キ', '緑': 'ミドリ', '白': 'シロ', '黒': 'クロ', '色': 'イロ',
+    # 感覚
+    '音': 'オト', '声': 'コエ', '力': 'チカラ', '歌': 'ウタ', '色': 'イロ',
+    # 動詞関連
+    '見': 'ミ', '聞': 'キ', '話': 'ハナシ', '読': 'ヨ', '書': 'カ', '言': 'イ',
     '食': 'タ', '飲': 'ノ', '寝': 'ネ', '起': 'オ', '歩': 'アル',
     '走': 'ハシ', '飛': 'ト', '泳': 'オヨ', '笑': 'ワラ', '泣': 'ナ',
     '好': 'ス', '嫌': 'キラ', '楽': 'タノ', '苦': 'クル', '嬉': 'ウレ',
     '悲': 'カナ', '怒': 'オコ', '驚': 'オドロ', '恐': 'コワ',
+    # 場所・建物
     '家': 'イエ', '学': 'ガク', '校': 'コウ', '社': 'シャ', '寺': 'テラ',
     '店': 'ミセ', '道': 'ミチ', '駅': 'エキ', '橋': 'ハシ',
+    # その他よく使う漢字
+    '人': 'ヒト', '子': 'コ', '女': 'オンナ', '男': 'オトコ', '犬': 'イヌ', '猫': 'ネコ',
+    '大': 'ダイ', '小': 'ショウ', '中': 'チュウ', '新': 'シン', '古': 'フル',
+    '多': 'オオ', '少': 'スコ', '高': 'タカ', '低': 'ヒク', '長': 'ナガ', '短': 'ミジカ',
     '行': 'イ', '来': 'キ', '帰': 'カエ', '入': 'イ', '出': 'デ',
-    '次': 'ツギ', '回': 'カイ', '実': 'ジツ', '伝': 'デン',
+    '開': 'ア', '閉': 'シ', '始': 'ハジ', '終': 'オ', '続': 'ツズ',
+    '作': 'ツク', '壊': 'コワ', '直': 'ナオ', '変': 'カ', '決': 'キ',
+    '知': 'シ', '思': 'オモ', '考': 'カンガ', '信': 'シン', '頑': 'ガン',
+    '張': 'バ', '全': 'ゼン', '部': 'ブ', '半': 'ハン', '分': 'ブン',
+    '次': 'ツギ', '回': 'カイ', '度': 'ド', '数': 'カズ', '実': 'ジツ', '伝': 'デン', 
+    '本': 'ホン', '当': 'トウ', '物': 'モノ', '事': 'コト', '心': 'ココロ', '手': 'テ', '足': 'アシ',
+    '目': 'メ', '耳': 'ミミ', '口': 'クチ', '顔': 'カオ', '頭': 'アタマ',
 }
 
-def kata2phoneme(text):
+# 基本単語マッピング（2文字以上のよく使う単語）
+word_to_kana = {
+    '次回': 'ジカイ',
+    '実際': 'ジッサイ',
+    '羊': 'ヒツジ',
+    'こんにちは': 'コンニチハ',
+    'さようなら': 'サヨウナラ',
+    '本当': 'ホントウ',
+    '今日': 'キョウ',
+    '明日': 'アシタ',
+    '昨日': 'キノウ',
+    'ありがとう': 'アリガトウ',
+    'すみません': 'スミマセン',
+    'こんばんは': 'コンバンハ',
+    'おはよう': 'オハヨウ',
+    '大丈夫': 'ダイジョウブ',
+}
+
+# 音素変換関数をまとめて提供
+def text_to_phonemes(text):
     """
-    日本語のテキスト（ひらがな、カタカナ、漢字）を音素に変換します。
-    ja_symbolsにリストされている有効な音素のみを使用します。
+    日本語テキストを音素に変換します。
+    ja_symbolsに含まれている音素のみを使用します。
     """
-    # 空文字チェック
     if not text or text.isspace():
         return []
-
-    # 漢字をカタカナに変換
+    
+    # まず単語単位で変換を試行
+    for word, kana in word_to_kana.items():
+        if word in text:
+            text = text.replace(word, kana)
+    
+    # 次に漢字をカタカナに変換
     for kanji, kana in kanji_to_kana.items():
-        text = text.replace(kanji, kana)
-
+        if kanji in text:
+            text = text.replace(kanji, kana)
+    
     # 文字を音素に変換
     phonemes = []
     i = 0
     while i < len(text):
-        # 2文字の組み合わせをまず確認（拗音などの処理）
-        if i < len(text) - 1 and text[i:i+2] in base_char_to_phonemes:
-            curr_phonemes = base_char_to_phonemes[text[i:i+2]]
-            phonemes.extend(curr_phonemes)
+        # まず2文字の組み合わせをチェック（拗音対応）
+        if i < len(text) - 1 and text[i:i+2] in char_to_phonemes:
+            char_phones = char_to_phonemes[text[i:i+2]]
+            phonemes.extend(char_phones)
             i += 2
-        # 1文字の処理
-        elif text[i] in base_char_to_phonemes:
-            curr_phonemes = base_char_to_phonemes[text[i]]
-            phonemes.extend(curr_phonemes)
+        # 次に1文字をチェック
+        elif text[i] in char_to_phonemes:
+            char_phones = char_to_phonemes[text[i]]
+            phonemes.extend(char_phones)
             i += 1
-        # 記号や句読点
+        # 句読点などの記号
         elif text[i] in punctuation:
             phonemes.append(text[i])
             i += 1
-        # 対応するマッピングがない文字
+        # それ以外は未知の文字
         else:
-            # 処理できない文字に関する警告
-            print(f"警告: 未知の文字 '{text[i]}' (コード: {ord(text[i])}) をスキップします")
+            print(f"注意: 未知の文字 '{text[i]}' をスキップします")
             i += 1
-
-    # 音素の検証
-    validated_phonemes = []
-    for ph in phonemes:
-        if ph in ja_symbols_list or ph in punctuation:
-            validated_phonemes.append(ph)
-        else:
-            print(f"警告: 音素 '{ph}' はja_symbolsに含まれていません")
     
-    return validated_phonemes
+    # 音素が有効かどうか確認
+    valid_phones = []
+    for ph in phonemes:
+        if ph in valid_phonemes:
+            valid_phones.append(ph)
+        else:
+            print(f"注意: 音素 '{ph}' はja_symbolsに含まれていないため削除します")
+    
+    return valid_phones
 
 def g2p(norm_text):
     """
     日本語テキストを音素、トーン、単語-音素マッピングに変換します。
-    完全にja_symbolsに合わせた音素を生成し、BERT特徴抽出との互換性を確保します。
+    ja_symbolsで定義された音素のみを使用します。
     """
-    # 前処理: 空文字列のチェック
+    # 空文字チェック
     if not norm_text or norm_text.isspace():
         return ["_"], [0], [1]
 
@@ -556,7 +590,7 @@ def g2p(norm_text):
         if not tokenized:
             return ["_"], [0], [1]
             
-        # 音素とword2phのリスト初期化
+        # 音素とword2phのリスト
         phs = []
         ph_groups = []
         
@@ -577,7 +611,7 @@ def g2p(norm_text):
         if current_group:
             ph_groups.append(current_group)
             
-        # グループが作成できたか確認
+        # グループが作成できなかった場合の対応
         if not ph_groups:
             return ["_"], [0], [1]
         
@@ -587,7 +621,7 @@ def g2p(norm_text):
             # グループ内のトークンを結合
             text = "".join(group)
             
-            # 特殊ケース: [UNK]トークンと句読点
+            # 特殊ケース: [UNK]トークン
             if text == '[UNK]' or text in punctuation:
                 phs += ['_' if text == '[UNK]' else text]
                 word2ph += [1]
@@ -595,33 +629,11 @@ def g2p(norm_text):
                 
             # 音素への変換
             try:
-                # 各文字を直接ja_symbolsに存在する音素に変換
-                phonemes = []
-                # 文字ごとに処理
-                for char in text:
-                    if char in base_char_to_phonemes:
-                        # 基本マッピングに存在する場合は直接変換
-                        char_phonemes = base_char_to_phonemes[char]
-                        phonemes.extend(char_phonemes)
-                    elif char in punctuation:
-                        # 句読点はそのまま追加
-                        phonemes.append(char)
-                    elif char in kanji_to_kana:
-                        # 漢字の場合はカタカナに変換して処理
-                        kana = kanji_to_kana[char]
-                        for k in kana:
-                            if k in base_char_to_phonemes:
-                                k_phonemes = base_char_to_phonemes[k]
-                                phonemes.extend(k_phonemes)
-                            else:
-                                print(f"警告: 無効な音素 '{char}' が見つかりました（テキスト：{text}）")
-                    else:
-                        # 未知の文字の場合は警告を出して、'_'を追加
-                        print(f"警告: 無効な音素 '{char}' が見つかりました（テキスト：{text}）")
+                # text_to_phonemes関数で音素に変換
+                phonemes = text_to_phonemes(text)
                 
                 # 音素変換結果の検証
                 if not phonemes:
-                    # 代替策としてアンダースコアを使用
                     phs += ['_']
                     word2ph += [1] * len(group)
                     continue
@@ -642,7 +654,7 @@ def g2p(norm_text):
                 phs += phonemes
                 
             except Exception as e:
-                # エラー時はプレースホルダーを使用
+                # エラー時の処理
                 phs += ['_']
                 word2ph += [1] * len(group)
         
@@ -659,10 +671,8 @@ def g2p(norm_text):
         # word2phの前後にパディング追加
         word2ph = [1] + word2ph + [1]
         
-        # word2phの長さ確認
-        # 重要: word2phの長さはtokenizedの長さ+2（先頭と末尾のパディング）と一致する必要がある
+        # word2phの長さ確認と調整
         if len(word2ph) != len(tokenized) + 2:
-            # 長さの調整
             if len(word2ph) > len(tokenized) + 2:
                 word2ph = word2ph[:len(tokenized) + 2]
             else:
@@ -678,9 +688,35 @@ def g2p(norm_text):
 def g2p_sbv(norm_text, use_sudachi=False):
     """
     style_bert_vits2のg2p関数と互換性を持たせるためのラッパー。
+    use_sudachi=Trueの場合、Sudachiを使って漢字をカタカナに変換します。
     """
     try:
-        return g2p(norm_text)
+        if use_sudachi:
+            try:
+                # Sudachiをインポート
+                from sudachipy import tokenizer, dictionary
+                
+                # Sudachiの辞書とトークナイザーを初期化
+                sudachi_tokenizer_obj = dictionary.Dictionary().create()
+                sudachi_mode = tokenizer.Tokenizer.SplitMode.C  # 最も細かい分割モード
+                
+                # テキストをトークナイズしてカタカナ読みに変換
+                morphs = sudachi_tokenizer_obj.tokenize(norm_text, sudachi_mode)
+                kata_text = "".join([m.reading_form() for m in morphs])
+                
+                print(f"Sudachiによる変換: '{norm_text}' → '{kata_text}'")
+                
+                # カタカナ変換されたテキストを処理
+                return g2p(kata_text)
+            except ImportError:
+                print("Sudachiがインストールされていないため、通常の処理を行います。")
+                return g2p(norm_text)
+            except Exception as e:
+                print(f"Sudachi処理エラー: {e}")
+                return g2p(norm_text)
+        else:
+            print("use_sudachi=Falseのため、通常の処理を行います。")
+            return g2p(norm_text)
     except Exception as e:
         print(f"g2p_sbv処理エラー: {e} (text: '{norm_text}')")
         return ["_"], [0], [1]

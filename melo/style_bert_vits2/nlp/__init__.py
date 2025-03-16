@@ -49,7 +49,7 @@ def extract_bert_feature(
     else:
         raise ValueError(f"Language {language} not supported")
 
-    return extract_bert_feature(text, word2ph, device, assist_text, assist_text_weight)
+    return extract_bert_feature(text, word2ph, device, language=language, assist_text=assist_text, assist_text_weight=assist_text_weight)
 
 
 def clean_text(

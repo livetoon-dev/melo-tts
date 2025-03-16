@@ -1,14 +1,80 @@
 import json
 from collections import defaultdict
 from random import shuffle
-from typing import Optional
-
+from typing import Optional, List, Tuple
+import multiprocessing
+from functools import partial
+import os
+import torch
 from tqdm import tqdm
 import click
 from text.cleaner import clean_text_bert
 import os
 import torch
 from text.symbols import symbols, num_languages, num_tones
+
+def process_line(line: str, clean: bool, use_sudachi: bool, gpu_id: int) -> Optional[Tuple[str, str, str, str, str, str, str, str]]:
+    """1行のデータを処理する関数"""
+    try:
+        utt, spk, language, text = line.strip().split("|")
+        print(f"Processing: {utt}, language: {language}, text: {text}")
+        try:
+            # GPUデバイスを指定
+            device = f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu'
+            
+            # BERT特徴抽出の前にモデル初期化を明示的に行う
+            if language.upper() in ["JA", "JP"]:
+                from style_bert_vits2.constants import Languages
+                from style_bert_vits2.nlp import bert_models
+                
+                # LINE DistilBERTモデルを事前に読み込む
+                try:
+                    bert_models.load_model(Languages.JP, "line-corporation/line-distilbert-base-japanese", trust_remote_code=True)
+                    bert_models.load_tokenizer(Languages.JP, "line-corporation/line-distilbert-base-japanese", trust_remote_code=True)
+                except Exception as e:
+                    print(f"BERT model initialization failed: {str(e)}")
+            
+            # テキスト処理とBERT特徴抽出
+            print(f"Calling clean_text_bert with use_sudachi={use_sudachi}")
+            norm_text, phones, tones, word2ph, bert = clean_text_bert(text, language, device=device, use_sudachi=use_sudachi)
+            
+            # 音素チェック
+            new_symbols = []
+            for ph in phones:
+                if ph not in symbols and ph not in new_symbols:
+                    new_symbols.append(ph)
+                    print('update!, now symbols:')
+                    print(new_symbols)
+                    with open(f'{language}_symbol.txt', 'w') as f:
+                        f.write(f'{new_symbols}')
+
+            assert len(phones) == len(tones)
+            assert len(phones) == sum(word2ph)
+            
+            # BERT特徴量を保存
+            bert_path = utt.replace(".wav", ".bert.pt")
+            os.makedirs(os.path.dirname(bert_path), exist_ok=True)
+            torch.save(bert, bert_path)
+            print(f"Saved BERT features to {bert_path}")
+            
+            return (
+                utt,
+                spk,
+                language,
+                norm_text,
+                " ".join(phones),
+                " ".join([str(i) for i in tones]),
+                " ".join([str(i) for i in word2ph]),
+                line
+            )
+        except Exception as e:
+            print(f"Error processing text: {text}")
+            print(f"Error details: {str(e)}")
+            return None
+    except Exception as e:
+        print(f"Error parsing line: {line.strip()}")
+        print(f"Error details: {str(e)}")
+        return None
 
 @click.command()
 @click.option(
@@ -27,7 +93,8 @@ from text.symbols import symbols, num_languages, num_tones
 @click.option("--val-per-spk", default=4)
 @click.option("--max-val-total", default=8)
 @click.option("--clean/--no-clean", default=True)
-@click.option("--use-sudachi/--no-sudachi", default=False, help="日本語のテキスト処理にSudachiを使用する")
+@click.option("--use-sudachi/--no-sudachi", default=True, help="日本語のテキスト処理にSudachiを使用する")
+@click.option("--num-processes", default=8, help="並列処理に使用するプロセス数")
 def main(
     metadata: str,
     cleaned_path: Optional[str],
@@ -38,6 +105,7 @@ def main(
     max_val_total: int,
     clean: bool,
     use_sudachi: bool,
+    num_processes: int,
 ):
     if train_path is None:
         train_path = os.path.join(os.path.dirname(metadata), 'train.list')
@@ -49,51 +117,57 @@ def main(
         cleaned_path = metadata + ".cleaned"
 
     if clean:
-        out_file = open(cleaned_path, "w", encoding="utf-8")
-        new_symbols = []
-        for line in tqdm(open(metadata, encoding="utf-8").readlines()):
-            try:
-                utt, spk, language, text = line.strip().split("|")
-                print(f"Processing: {utt}, language: {language}, text: {text}")
-                try:
-                    norm_text, phones, tones, word2ph, bert = clean_text_bert(text, language, device='cuda:0', use_sudachi=use_sudachi)
-                    for ph in phones:
-                        if ph not in symbols and ph not in new_symbols:
-                            new_symbols.append(ph)
-                            print('update!, now symbols:')
-                            print(new_symbols)
-                            with open(f'{language}_symbol.txt', 'w') as f:
-                                f.write(f'{new_symbols}')
-
-                    assert len(phones) == len(tones)
-                    assert len(phones) == sum(word2ph)
+        # 利用可能なGPUの数を確認
+        num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        print(f"利用可能なGPU数: {num_gpus}")
+        
+        # プロセス数を調整（GPUの数を超えないようにする）
+        if num_gpus > 0:
+            num_processes = min(num_processes, num_gpus)
+        
+        print(f"並列処理に使用するプロセス数: {num_processes}")
+        
+        # 入力ファイルの行を読み込む
+        lines = open(metadata, encoding="utf-8").readlines()
+        
+        if num_processes > 1 and num_gpus > 0:
+            # 各GPUに割り当てるデータを分割
+            chunks = [[] for _ in range(num_processes)]
+            for i, line in enumerate(lines):
+                chunks[i % num_processes].append((line, i % num_gpus))
+            
+            # 各GPUで並列処理
+            results = []
+            for gpu_id in range(min(num_processes, num_gpus)):
+                chunk_results = []
+                print(f"GPU {gpu_id} で {len(chunks[gpu_id])} 件のデータを処理します")
+                
+                for line, _ in tqdm(chunks[gpu_id], desc=f"GPU {gpu_id} 処理中"):
+                    # 直接process_line関数を呼び出す形に修正
+                    result = process_line(line, clean, use_sudachi, gpu_id)  # use_sudachi引数を正しく渡す
+                    if result:
+                        chunk_results.append(result)
+                
+                results.extend(chunk_results)
+        else:
+            # シングルプロセス処理
+            results = []
+            for line in tqdm(lines):
+                result = process_line(line, clean, use_sudachi, 0)  # use_sudachi引数を正しく渡す
+                if result:
+                    results.append(result)
+        
+        # 結果を書き込む
+        with open(cleaned_path, "w", encoding="utf-8") as out_file:
+            for result in results:
+                if result:
+                    utt, spk, language, norm_text, phones, tones, word2ph, _ = result
                     out_file.write(
                         "{}|{}|{}|{}|{}|{}|{}\n".format(
-                            utt,
-                            spk,
-                            language,
-                            norm_text,
-                            " ".join(phones),
-                            " ".join([str(i) for i in tones]),
-                            " ".join([str(i) for i in word2ph]),
+                            utt, spk, language, norm_text, phones, tones, word2ph
                         )
                     )
-                    bert_path = utt.replace(".wav", ".bert.pt")
-                    os.makedirs(os.path.dirname(bert_path), exist_ok=True)
-                    # BERT特徴量を保存
-                    torch.save(bert, bert_path)
-                    print(f"Saved BERT features to {bert_path}")
-                except Exception as e:
-                    print(f"Error processing text: {text}")
-                    print(f"Error details: {str(e)}")
-                    continue
-            except Exception as e:
-                print(f"Error parsing line: {line.strip()}")
-                print(f"Error details: {str(e)}")
-                continue
-
-        out_file.close()
-
+        
         metadata = cleaned_path
 
     spk_utt_map = defaultdict(list)
