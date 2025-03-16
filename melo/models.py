@@ -343,9 +343,8 @@ class TextEncoder(nn.Module):
         nn.init.normal_(self.tone_emb.weight, 0.0, hidden_channels**-0.5)
         self.language_emb = nn.Embedding(num_languages, hidden_channels)
         nn.init.normal_(self.language_emb.weight, 0.0, hidden_channels**-0.5)
-        self.bert_proj = nn.Conv1d(1024, hidden_channels, 1)
-        self.ja_bert_proj = nn.Conv1d(768, hidden_channels, 1)
-        self.en_bert_proj = nn.Conv1d(1024, hidden_channels, 1)
+        self.bert_proj = nn.Conv1d(768, hidden_channels, 1)
+        self.bert_proj_1024 = nn.Conv1d(1024, hidden_channels, 1)
         self.style_proj = nn.Linear(512, hidden_channels)
         self.tone_emb = nn.Embedding(512, hidden_channels)
         self.language_emb = nn.Embedding(10, hidden_channels)
@@ -363,7 +362,7 @@ class TextEncoder(nn.Module):
 
     def forward(self, x, x_lengths, tone, language, bert, ja_bert, g=None):
         bert_emb = self.bert_proj(bert).transpose(1, 2)
-        ja_bert_emb = self.ja_bert_proj(ja_bert).transpose(1, 2)
+        ja_bert_emb = self.bert_proj(ja_bert).transpose(1, 2)
         x = (
             self.emb(x)
             + self.tone_emb(tone)

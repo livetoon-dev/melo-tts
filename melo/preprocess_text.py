@@ -12,69 +12,112 @@ from text.cleaner import clean_text_bert
 import os
 import torch
 from text.symbols import symbols, num_languages, num_tones
+from pathlib import Path
+
+# モデルの保存場所を定義
+MODEL_CACHE_DIR = Path(os.path.expanduser("~/.cache/huggingface"))
+MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# プログラムの先頭で spawn 方式を設定
+multiprocessing.set_start_method('spawn', force=True)
+
+def initialize_bert_model():
+    """BERTモデルを一度だけ初期化する関数"""
+    from transformers import AutoTokenizer, AutoModel
+    
+    model_name = 'line-corporation/line-distilbert-base-japanese'
+    
+    # モデルとトークナイザーを保存
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+    
+    # 保存
+    tokenizer.save_pretrained(MODEL_CACHE_DIR / model_name)
+    model.save_pretrained(MODEL_CACHE_DIR / model_name)
+    
+    return tokenizer, model
 
 def process_line(line: str, clean: bool, use_sudachi: bool, gpu_id: int) -> Optional[Tuple[str, str, str, str, str, str, str, str]]:
     """1行のデータを処理する関数"""
     try:
         utt, spk, language, text = line.strip().split("|")
         print(f"Processing: {utt}, language: {language}, text: {text}")
-        try:
-            # GPUデバイスを指定
-            device = f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu'
-            
-            # BERT特徴抽出の前にモデル初期化を明示的に行う
-            if language.upper() in ["JA", "JP"]:
-                from style_bert_vits2.constants import Languages
-                from style_bert_vits2.nlp import bert_models
-                
-                # LINE DistilBERTモデルを事前に読み込む
-                try:
-                    bert_models.load_model(Languages.JP, "line-corporation/line-distilbert-base-japanese", trust_remote_code=True)
-                    bert_models.load_tokenizer(Languages.JP, "line-corporation/line-distilbert-base-japanese", trust_remote_code=True)
-                except Exception as e:
-                    print(f"BERT model initialization failed: {str(e)}")
-            
-            # テキスト処理とBERT特徴抽出
-            print(f"Calling clean_text_bert with use_sudachi={use_sudachi}")
-            norm_text, phones, tones, word2ph, bert = clean_text_bert(text, language, device=device, use_sudachi=use_sudachi)
-            
-            # 音素チェック
-            new_symbols = []
-            for ph in phones:
-                if ph not in symbols and ph not in new_symbols:
-                    new_symbols.append(ph)
-                    print('update!, now symbols:')
-                    print(new_symbols)
-                    with open(f'{language}_symbol.txt', 'w') as f:
-                        f.write(f'{new_symbols}')
+        
+        device = f'cuda:{gpu_id}' if torch.cuda.is_available() else 'cpu'
+        torch.cuda.set_device(device)
+        
+        if language.upper() in ["JA", "JP"]:
+            try:
+                if not hasattr(process_line, 'bert_initialized'):
+                    from transformers import AutoTokenizer, AutoModel
+                    # モデル名を直接指定
+                    model_name = 'line-corporation/line-distilbert-base-japanese'
+                    
+                    # 直接HuggingFaceからダウンロード
+                    process_line.tokenizer = AutoTokenizer.from_pretrained(
+                        model_name,
+                        trust_remote_code=True
+                    )
+                    process_line.model = AutoModel.from_pretrained(
+                        model_name,
+                        trust_remote_code=True
+                    ).to(device)
+                    process_line.bert_initialized = True
+            except Exception as e:
+                print(f"BERT initialization error for {language}: {str(e)}")
+                return None
+        
+        # テキスト処理とBERT特徴抽出
+        print(f"Calling clean_text_bert with use_sudachi={use_sudachi}")
+        norm_text, phones, tones, word2ph, bert = clean_text_bert(text, language, device=device, use_sudachi=use_sudachi)
+        
+        # 音素チェック
+        new_symbols = []
+        for ph in phones:
+            if ph not in symbols and ph not in new_symbols:
+                new_symbols.append(ph)
+                print('update!, now symbols:')
+                print(new_symbols)
+                with open(f'{language}_symbol.txt', 'w') as f:
+                    f.write(f'{new_symbols}')
 
-            assert len(phones) == len(tones)
-            assert len(phones) == sum(word2ph)
-            
-            # BERT特徴量を保存
-            bert_path = utt.replace(".wav", ".bert.pt")
-            os.makedirs(os.path.dirname(bert_path), exist_ok=True)
-            torch.save(bert, bert_path)
-            print(f"Saved BERT features to {bert_path}")
-            
-            return (
-                utt,
-                spk,
-                language,
-                norm_text,
-                " ".join(phones),
-                " ".join([str(i) for i in tones]),
-                " ".join([str(i) for i in word2ph]),
-                line
-            )
-        except Exception as e:
-            print(f"Error processing text: {text}")
-            print(f"Error details: {str(e)}")
-            return None
+        assert len(phones) == len(tones)
+        assert len(phones) == sum(word2ph)
+        
+        # BERT特徴量を保存
+        bert_path = utt.replace(".wav", ".bert.pt")
+        os.makedirs(os.path.dirname(bert_path), exist_ok=True)
+        torch.save(bert, bert_path)
+        print(f"Saved BERT features to {bert_path}")
+        
+        # GPUメモリの解放
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        return (
+            utt,
+            spk,
+            language,
+            norm_text,
+            " ".join(phones),
+            " ".join([str(i) for i in tones]),
+            " ".join([str(i) for i in word2ph]),
+            line
+        )
     except Exception as e:
-        print(f"Error parsing line: {line.strip()}")
+        print(f"Error processing text: {text}")
         print(f"Error details: {str(e)}")
         return None
+
+def process_chunk(chunk_data, clean, use_sudachi, gpu_id):
+    # プロセスごとのGPUセットアップ
+    torch.cuda.set_device(gpu_id)
+    chunk_results = []
+    for line in tqdm(chunk_data, desc=f"GPU {gpu_id} 処理中"):
+        result = process_line(line, clean, use_sudachi, gpu_id)
+        if result:
+            chunk_results.append(result)
+    return chunk_results
 
 @click.command()
 @click.option(
@@ -117,43 +160,37 @@ def main(
         cleaned_path = metadata + ".cleaned"
 
     if clean:
-        # 利用可能なGPUの数を確認
         num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
         print(f"利用可能なGPU数: {num_gpus}")
         
-        # プロセス数を調整（GPUの数を超えないようにする）
         if num_gpus > 0:
             num_processes = min(num_processes, num_gpus)
         
         print(f"並列処理に使用するプロセス数: {num_processes}")
         
-        # 入力ファイルの行を読み込む
         lines = open(metadata, encoding="utf-8").readlines()
         
         if num_processes > 1 and num_gpus > 0:
-            # 各GPUに割り当てるデータを分割
+            # データを分割
             chunks = [[] for _ in range(num_processes)]
             for i, line in enumerate(lines):
-                chunks[i % num_processes].append((line, i % num_gpus))
+                chunks[i % num_processes].append(line)
             
-            # 各GPUで並列処理
-            results = []
-            for gpu_id in range(min(num_processes, num_gpus)):
-                chunk_results = []
-                print(f"GPU {gpu_id} で {len(chunks[gpu_id])} 件のデータを処理します")
+            # マルチプロセスプールを作成
+            with multiprocessing.Pool(num_processes) as pool:
+                # 各チャンクを並列処理
+                chunk_args = [(chunks[i], clean, use_sudachi, i) for i in range(num_processes)]
+                all_results = pool.starmap(process_chunk, chunk_args)
                 
-                for line, _ in tqdm(chunks[gpu_id], desc=f"GPU {gpu_id} 処理中"):
-                    # 直接process_line関数を呼び出す形に修正
-                    result = process_line(line, clean, use_sudachi, gpu_id)  # use_sudachi引数を正しく渡す
-                    if result:
-                        chunk_results.append(result)
-                
-                results.extend(chunk_results)
+                # 結果を統合
+                results = []
+                for chunk_result in all_results:
+                    results.extend(chunk_result)
         else:
             # シングルプロセス処理
             results = []
             for line in tqdm(lines):
-                result = process_line(line, clean, use_sudachi, 0)  # use_sudachi引数を正しく渡す
+                result = process_line(line, clean, use_sudachi, 0)
                 if result:
                     results.append(result)
         
