@@ -1,6 +1,6 @@
 CONFIG=$1
 GPUS=$2
-MODEL_NAME=pretrain_tone_4
+MODEL_NAME=default_2
 
 PORT=10902
 

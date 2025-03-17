@@ -11,6 +11,13 @@ from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 import logging
 
+torch.set_num_threads(28)  # 코어 개수 만큼 사용
+os.environ["OMP_NUM_THREADS"] = "28"
+os.environ["MKL_NUM_THREADS"] = "28"
+os.environ["OPENBLAS_NUM_THREADS"] = "28"
+os.environ["NUMEXPR_NUM_THREADS"] = "28"
+os.environ["GLOO_SOCKET_IFNAME"] = "lo"  # GLOO 통신 최적화
+
 logging.getLogger("numba").setLevel(logging.WARNING)
 import commons
 import utils
@@ -67,6 +74,7 @@ def run():
         writer = SummaryWriter(log_dir=hps.model_dir)
         writer_eval = SummaryWriter(log_dir=os.path.join(hps.model_dir, "eval"))
     train_dataset = TextAudioSpeakerLoader(hps.data.training_files, hps.data)
+    print(f"Dataset length (train): {len(train_dataset)}")
     train_sampler = DistributedBucketSampler(
         train_dataset,
         hps.train.batch_size,

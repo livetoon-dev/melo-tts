@@ -154,9 +154,6 @@ def text_to_sep_kata(
         elif yomi == "？":
             assert word == "?", f"yomi `？` comes from: {word}"
             yomi = "?"
-        elif yomi == "！":
-            assert word == "!", f"yomi `！` comes from: {word}"
-            yomi = "!"
         sep_text.append(word)
         sep_kata.append(yomi)
 
