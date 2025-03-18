@@ -1,6 +1,6 @@
 CONFIG=$1
 GPUS=$2
-MODEL_NAME=default_2
+MODEL_NAME=$3 # default_5
 
 PORT=10902
 

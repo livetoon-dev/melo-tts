@@ -1,0 +1,335 @@
+mkdir workspace
+conda deactivate
+ls
+nvidia-smi
+watch -n 1 nvidia-smi
+nvidia-smi topo -m
+sudo pkill -f python
+nvidia-smi
+watch -n 1 nvidia-smi
+nvidia-smi -l 2
+conda deactivate
+ls
+cd workspace/
+cd melo-tts/
+source .venv/bin/activate
+tensorboard --logdir /home/ydk/workspace/melo-tts/melo/logs/default
+tensorboard --logdir /home/ydk/workspace/melo-tts/melo/logs/default7
+cd workspace/
+ls
+cd melo-tts/
+ls
+cd melo
+ls
+cd logs/
+ls
+pwd
+ls
+cd melo
+ls
+cd logs/
+ls
+conda deactivate
+source ../../.venv/bin/activate
+tensorboard --logdir ./default
+tensorboard --logdir ./default7
+cd ..
+ls
+ls -a
+cat .bash_history
+history
+history 50
+ps -ef | grep python
+jobs
+ps aux | grep torchrun
+sudo tail -f /proc/1479425/fd/1
+sudo tail -f /proc/1479425/fd/2
+sudo tail -f /proc/1479425/fd/1
+ps aux | grep torchrun
+conda deactivate
+cd melo
+ls
+cd ..
+ls
+cd melo-tts/
+source .venv/bin/activate
+python infer.py --text "おはようございます" -m /home/ydk/workspace/melo-tts/melo/logs/default7/G_12000.pth -o ./output.wav
+cd melo
+python infer.py --text "おはようございます" -m /home/ydk/workspace/melo-tts/melo/logs/default7/G_12000.pth -o ./output.wav
+python infer.py --text "日本国民は、正義と秩序を基調とする国際平和を誠実に希求し、国権の発動たる戦争と、武力による威嚇又は武力の行使は、国際紛争を解決する手段としては、永久にこれを放棄する。" -m /home/ydk/workspace/melo-tts/melo/logs/default7/G_12000.pth -o ./output.wav
+dmesg | grep -i kill
+sudo dmesg | grep -i kill
+journalctl -xe | grep OOM
+sudo journalctl -u docker.service --since "1 hour ago"
+sudo journalctl -xe | grep -i kill
+sudo journalctl -xe | grep -i signal
+sudo journalctl -xe | grep -i term
+sudo dmesg | grep -i term
+nvidia-smi
+iostat -xz 1  # CPU와 디스크 I/O 확인
+iostat -xz 1
+sudo apt update && sudo apt install -y sysstat
+iostat -xz 1
+top -o %CPU
+free -h
+cd /home/ydk/workspace/melo-tts/melo/data
+du -sh
+conda deactivate
+cd ..
+cd style_bert_vits2/
+python check_txt.py 
+source ../../.venv/bin/activate
+python check_txt.py 
+cd ..
+python check_txt.py 
+python sbv2_gen_text.py 
+python check_txt.py 
+python sbv2_gen_text.py 
+uv pip install pyopenjtalk[marine]
+python sbv2_gen_text.py 
+conda deactivate
+git clone https://github.com/livetoon-dev/melo-tts.git
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
+source $HOME/.local/bin/env
+cd melo-tts/
+uv sync
+git clone https://github.com/litagin02/Style-Bert-VITS2.git
+cd Style-Bert-VITS2/
+uv pip install -r requirements
+uv pip install -r requirements.txgt
+uv pip install -r requirements.txt
+source ../.venv/bin/activate
+cd ..
+cd melo
+uv run python -m unidic download
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+aws configure
+s5cmd sync "s3://dataset-moespeech/data/*" "/home/ydk/workspace/melo-tts/melo/data/"
+wget https://github.com/peak/s5cmd/releases/latest/download/s5cmd_linux_amd64 -O s5cmd
+chmod +x s5cmd
+sudo mv s5cmd /usr/local/bin/
+wget -qO- https://api.github.com/repos/peak/s5cmd/releases/latest | grep "browser_download_url"
+wget https://github.com/peak/s5cmd/releases/download/v2.3.0/s5cmd_2.3.0_Linux-64bit.tar.gz
+tar -xvzf s5cmd_2.3.0_Linux-64bit.tar.gz
+chmod +x s5cmd
+sudo mv s5cmd /usr/local/bin/
+s5cmd sync "s3://dataset-moespeech/data/*" "/home/ydk/workspace/melo-tts/melo/data/"
+python preprocess_text.py --metadata data/metadata_0308_melo.list
+huggingface-cli download ku-nlp/deberta-v2-base-japanese-char-wwm --local-dir /home/ydk/workspace/melo-tts/melo/bert/deberta-v2-base-japanese-char-wwm
+python preprocess_text.py --metadata data/metadata_0308_melo.list
+s5cmd cp "s3://dataset-moespeech/preprocessed_metadata_moespeech_dataset.list" /home/ydk/workspace/melo-tts/melo/data/
+python /home/ydk/workspace/check_txt.py
+python preprocess_text.py --metadata data/metadata_filtered.list
+python preprocess_text_multi.py --metadata data/metadata_filtered.list
+nohup bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4 > train.log 2>&1 &
+kill 1306770
+nohup bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4 > train.log 2>&1 &
+ps -ef | grep python
+kill1307942
+kill 1307942
+sudo pkill -f python
+jobs -l
+nohup bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4 > train.log 2>&1 &
+kill 1309876
+sudo pkill -f python
+lscpu
+nohup bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4 > train.log 2>&1 &
+kill 1315437
+sudo pkill -f python
+nohup bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4 > train.log 2>&1 &
+kill 1324255
+sudo pkill -f python
+ps -ef | grep python
+nohup bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4 > train.log 2>&1 &
+which nccl
+ldconfig -p | grep nccl
+sudo apt-get install -y libnccl2 libnccl-dev
+kill 1332560
+sudo pkill -f python
+nohup bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4 > train.log 2>&1 &
+kill 1406993
+sudo pkill -f python
+bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4
+sudo pkill -f python
+bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4
+sudo apt install iotop -y
+sudo iotop -oP
+conda deactivate
+cd melo-tts/
+source .venv/bin/activate
+tensorboard --logdir /home/ydk/workspace/melo-tts/melo/logs/default7
+nvidia-smi
+tensorboard --logdir /home/ydk/workspace/melo-tts/melo/logs/default7
+nvidia-smi
+tensorboard --logdir /home/ydk/workspace/melo-tts/melo/logs/default7
+conda deactivate
+cd melo-tts/
+source .venv/bin/activate
+ls
+cd ..
+git clone https://github.com/litagin02/Style-Bert-VITS2.git
+deactivate
+cd Style-Bert-VITS2/
+ls
+uv sync
+source .venv/bin/activate
+ls
+uv run app.py 
+uv pip install gradio
+uv run app.py
+uv pip install -r requirements
+uv pip install -r requirements.txt
+uv run app.py
+python initialize.py
+uv run app.py
+python app.py 
+python -m style_bert_vits2.nlp.japanese.pyopenjtalk_worker.server
+rm -rf .venv
+cd ..
+cd Style-Bert-VITS2/
+deactivate
+uv venv venv
+source venv/bin/activate
+uv pip install -r requirements.txt
+python app.py 
+nohup rsync -ah --info=progress2 --remove-source-files /home/ydk/workspace/melo-tts/melo/data/ /home/ydk/workspace/Style-Bert-VITS2/Data/JP-default/ > fast_copy_log.out 2>&1 &
+du -sh /home/ydk/workspace/melo-tts/melo/data
+conda deactivate
+ls
+source .venv/bin/activate
+tensorboard --logdir melo/logs/default7
+du -h
+du -sh
+nohup rsync -ah --info=progress2 --remove-source-files /home/ydk/workspace/melo-tts/melo/data/ /home/ydk/workspace/Style-Bert-VITS2/Data/JP-default/ > fast_copy_log.out 2>&1 &
+ls
+conda deactivate
+ls
+cd melo-tts/
+cd melo
+cd ..
+source .venv/bin/activate
+uv pip list
+pip list > pip_packages.txt
+uv pip list > pip_packages.txt
+ls
+ps -ef | grep python
+find /home/ydk/workspace/melo-tts/melo/data -mindepth 1 -maxdepth 1 -type d | wc -l
+export PROMPT_COMMAND='history -a'
+echo 'history -a' >> ~/.bash_logout
+find /home/ydk/workspace/melo-tts/melo/data -type f -name "*.bert.pt" | wc -l
+find /home/ydk/workspace/melo-tts/melo/data -type f -name "*.spec.pt" | wc -l
+git clone --branch 250312-train --single-branch https://github.com/livetoon-dev/melo-tts.git
+cd melo-tts/
+ls
+uv sync
+cd melo
+uv run python -m unidic download
+
+uv run python -m unidic download
+cd ..
+uv pip install -r requirements.txt 
+sudo uv pip install -r requirements.txt 
+uv pip install -r requirements.txt 
+uv pip install -U torch torchaudio
+uv pip freeze
+wget https://github.com/peak/s5cmd/releases/download/v2.3.0/s5cmd_2.3.0_Linux-64bit.tar.gz -O s5cmd.tar.gz
+tar -xvf s5cmd.tar.gz
+chmod +x s5cmd
+sudo mv s5cmd /usr/local/bin/
+s5cmd sync "s3://dataset-moespeech/data/*" "/home/ydk/workspace/melo-tts/melo/data/example/"
+s5cmd sync "s3://dataset-moespeech/data/*" "/home/ydk/workspace/melo-tts/melo/data/"
+sudo apt install git-lfs
+git lfs install
+cd melo
+cd bert/
+git clone https://huggingface.co/ku-nlp/deberta-v2-base-japanese-char-wwm
+cd deberta-v2-base-japanese-char-wwm/
+du -h
+dh -sh
+du -sh
+du -h
+git lfs ls-files
+git lfs pull
+ls -lh
+git lfs pull
+cd ..
+git lfs pull
+ls -lh
+cd deberta-v2-base-japanese-char-wwm/
+ls -lh
+git lfs prune
+git lfs fetch --all
+git lfs pull
+ls -lh
+cd deberta-v2-base-japanese-char-wwm/git checkout HEAD -- pytorch_model.bin model.safetensors
+git lfs pull
+git checkout HEAD -- pytorch_model.bin model.safetensors
+git lfs pull
+ls -lh
+wget https://huggingface.co/ku-nlp/deberta-v2-base-japanese-char-wwm/resolve/main/pytorch_model.bin
+wget https://huggingface.co/ku-nlp/deberta-v2-base-japanese-char-wwm/resolve/main/model.safetensors
+ls -lh
+cd ..
+source .venv/bin/activate
+cd melo
+pip install -e .
+cd ..
+pip install -e .
+uv pip install -e .
+python preprocess_text.py --metadata data/metadata.list 
+cd melo
+python preprocess_text.py --metadata data/metadata.list 
+cd ..
+uv pip install -r requirements.txt 
+python preprocess_text.py --metadata data/metadata.list 
+cd melo
+python preprocess_text.py --metadata data/metadata.list 
+uv pip install -U torch
+uv pip install -U torch torchaudio
+python preprocess_text.py --metadata data/metadata.list 
+nohup bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4 > train.log 2>&1 &
+tensorboard --logdir logs/default_0/
+kill 395583
+bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4
+pkill -f python
+sudo pkill -f python
+ps -ef | grep sh
+sudo pkill -f python
+ps -ef | grep python
+bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4
+sudo pkill -f python
+find /home/ydk/workspace/melo-tts/melo/data -type f -name "*.bert.pt" | wc -l
+find /home/ydk/workspace/melo-tts/melo/data -type f -name "*.spec.pt" | wc -l
+bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4
+sudo pkill -f python
+bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4
+sudo pkill -f python
+nohup bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4 > train.log 2>&1 &
+bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4
+cd melo-tts/
+source .venv/bin/activate
+ls
+cd melo
+ls
+python data_utils.py 
+tensorboard --logdir logs/default_0/
+ps -ef | grep sh
+kill 444070
+ps -ef | grep sh
+strace -p 463331 -o output.log
+sudo apt update && sudo apt install -y strace
+strace -p 463331 -o output.log
+bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4
+sudo pkill -f python
+conda deactivate
+ps -ef | grep sh
+bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4
+source ../.venv/bin/activate
+bash train.sh /home/ydk/workspace/melo-tts/melo/data/config.json 4
+# 실행 중인 프로세스를 백그라운드로 이동
+bg
+# 터미널과 분리 (로그아웃해도 계속 실행됨)
+disown -h

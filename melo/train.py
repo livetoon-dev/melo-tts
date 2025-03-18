@@ -11,11 +11,11 @@ from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 import logging
 
-torch.set_num_threads(28)  # 코어 개수 만큼 사용
-os.environ["OMP_NUM_THREADS"] = "28"
-os.environ["MKL_NUM_THREADS"] = "28"
-os.environ["OPENBLAS_NUM_THREADS"] = "28"
-os.environ["NUMEXPR_NUM_THREADS"] = "28"
+torch.set_num_threads(48)  # 코어 개수 만큼 사용
+os.environ["OMP_NUM_THREADS"] = "48"
+os.environ["MKL_NUM_THREADS"] = "48"
+os.environ["OPENBLAS_NUM_THREADS"] = "48"
+os.environ["NUMEXPR_NUM_THREADS"] = "48"
 os.environ["GLOO_SOCKET_IFNAME"] = "lo"  # GLOO 통신 최적화
 
 logging.getLogger("numba").setLevel(logging.WARNING)
@@ -86,7 +86,7 @@ def run():
     collate_fn = TextAudioSpeakerCollate()
     train_loader = DataLoader(
         train_dataset,
-        num_workers=8,
+        num_workers=24,
         shuffle=False,
         pin_memory=True,
         collate_fn=collate_fn,

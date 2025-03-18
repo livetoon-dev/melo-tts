@@ -11,6 +11,7 @@ build/
 *.wav
 
 melo/data/
+melo/data_cleaned/
 melo/logs/
 melo/aws/
 melo/bert/
