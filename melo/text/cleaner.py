@@ -71,19 +71,17 @@ def safe_int_convert(s: str) -> int:
     except ValueError:
         return 0
 
-def text_to_phonemes(text: str, use_jp_extra: bool = True, raise_yomi_error: bool = False) -> tuple[list[str], list[int], list[int]]:
+def text_to_phonemes(text: str) -> tuple[list[str], list[int], list[int]]:
     """
     テキストを音素列に変換する
     Args:
         text (str): 入力テキスト
-        use_jp_extra (bool): Falseの場合、「ん」の音素を「N」ではなく「n」とする
-        raise_yomi_error (bool): Falseの場合、読めない文字が「'」として発音される
     Returns: (音素リスト, トーンリスト, word2ph)
     """
     norm_text = normalize_text(text)
     
     # japanese.pyのg2pを使用
-    phones, tones, word2ph = japanese.g2p(norm_text, use_jp_extra=use_jp_extra, raise_yomi_error=raise_yomi_error)
+    phones, tones, word2ph = japanese.g2p(norm_text)
     
     return phones, tones, word2ph
 

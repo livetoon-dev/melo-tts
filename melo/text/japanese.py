@@ -720,6 +720,8 @@ def text_to_phonemes(text):
 def g2p(text: str) -> tuple[list[str], list[int], list[int]]:
     """
     テキストを音素列に変換する
+    Args:
+        text (str): 入力テキスト
     Returns: (音素リスト, トーンリスト, word2ph)
     """
     # テキストを正規化
