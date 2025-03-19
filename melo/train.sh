@@ -1,8 +1,10 @@
 CONFIG=$1
 GPUS=$2
-MODEL_NAME=pretrain_vtuber
+MODEL_NAME=pretrain_vtuber_line
 
-PORT=20902
+# ランダムなポートを選択（30000-40000の範囲から）
+PORT=$(( ( RANDOM % 10000 ) + 30000 ))
+echo "Using random port: $PORT"
 
 # 仮想環境のパス
 VENV_PATH="/home/nagashimadaichi/dev/melo-tts/.venv"

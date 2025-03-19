@@ -10,7 +10,6 @@ from text.cleaner import clean_text_bert
 from text.symbols import symbols, num_languages, num_tones
 
 def process_file(file_chunk, cleaned_path, gpu_id, temp_dir):
-    """각 프로세스에서 실행될 함수"""
     out_file = open(os.path.join(temp_dir, f"{os.path.basename(cleaned_path)}.{gpu_id}"), "w", encoding="utf-8")
     new_symbols = []
     device = f"cuda:{gpu_id}"

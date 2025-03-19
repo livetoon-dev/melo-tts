@@ -1,4 +1,4 @@
-# flake8: noqa: E402
+# train.py
 
 # マルチプロセス設定
 import multiprocessing
@@ -564,9 +564,9 @@ def evaluate(hps, generator, eval_loader, writer_eval):
             y, y_lengths = y.cuda(), y_lengths.cuda()
             speakers = speakers.cuda()
             bert = bert.cuda()
-            ja_bert = ja_bert.cuda()
             tone = tone.cuda()
             language = language.cuda()
+            ja_bert = ja_bert.cuda()
             for use_sdp in [True, False]:
                 y_hat, attn, mask, *_ = generator.module.infer(
                     x,

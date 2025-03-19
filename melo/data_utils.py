@@ -1,3 +1,5 @@
+# data_utils.py
+
 import os
 import random
 import torch
@@ -41,7 +43,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
 
         self.cleaned_text = getattr(hparams, "cleaned_text", False)
 
-        self.add_blank = hparams.add_blank
+        self.add_blank = getattr(hparams, "add_blank", False)
         self.min_text_len = getattr(hparams, "min_text_len", 1)
         self.max_text_len = getattr(hparams, "max_text_len", 300)
 
@@ -156,48 +158,31 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
             for i in range(len(word2ph)):
                 word2ph[i] = word2ph[i] * 2
             word2ph[0] += 1
-        bert_path = wav_path.replace(".wav", ".bert.pt")
+
+        bert_path = os.path.join(os.path.dirname(wav_path), os.path.basename(wav_path).replace(".wav", ".bert.pt"))
         try:
             bert = torch.load(bert_path)
         except Exception as e:
-            print(e, wav_path, bert_path, bert.shape if 'bert' in locals() else 'No bert shape', len(phone))
-            bert = get_bert(text, word2ph, language_str, device='cpu')
-            torch.save(bert, bert_path)
+            print(f"Error loading BERT file: {e}")
+            print(f"Attempted path: {bert_path}")
+            raise RuntimeError(f"Failed to load BERT features from {bert_path}. Please run preprocess_text.py first.")
 
         if self.disable_bert:
             bert = torch.zeros(1024, len(phone))
             ja_bert = torch.zeros(768, len(phone))
         else:
-            # BERTの次元をチェック
-            bert_dim = bert.shape[0]
-            
-            if language_str in ["ZH"]:
-                # 中国語の場合
-                if bert_dim != 1024:
-                    print(f"中国語BERTの次元が不正: {bert_dim}, 1024に修正します")
-                    new_bert = torch.zeros(1024, bert.shape[1])
-                    new_bert[:bert_dim, :] = bert
-                    bert = new_bert
-                    
-                ja_bert = torch.zeros(768, len(phone))
-            elif language_str in ["JP", "JA", "EN", "ZH_MIX_EN", "KR", 'SP', 'ES', 'FR', 'DE', 'RU']:
-                # 日本語・英語などの場合
-                if bert_dim != 768:
-                    print(f"{language_str}のBERT次元が不正: {bert_dim}, 768に修正します")
-                    # 次元が大きい場合は切り捨て、小さい場合はゼロ埋め
-                    new_bert = torch.zeros(768, bert.shape[1])
-                    min_dim = min(bert_dim, 768)
-                    new_bert[:min_dim, :] = bert[:min_dim, :]
-                    bert = new_bert
-                
-                ja_bert = bert
-                bert = torch.zeros(1024, len(phone))
+            if language_str in ["ZH"]:  # 中国語の場合
+                bert = bert  # 通常のBERTを使用（1024次元）
+                ja_bert = torch.zeros(768, len(phone))  # ja_bertは使用しない
+            elif language_str in ["JP", "EN", "ZH_MIX_EN", "KR", 'SP', 'ES', 'FR', 'DE', 'RU']:  # その他の言語の場合
+                ja_bert = bert  # ja_bertとしてBERTを使用（768次元）
+                bert = torch.zeros(1024, len(phone))  # 通常のBERTは使用しない
             else:
-                # 未知の言語コードの場合、エラーメッセージを表示
-                raise ValueError(f"未対応の言語コード: {language_str}")
-                bert = torch.zeros(1024, len(phone))
-                ja_bert = torch.zeros(768, len(phone))
-        assert bert.shape[-1] == len(phone)
+                raise ValueError(f"Unsupported language: {language_str}")
+
+        assert bert.size(1) == len(phone), f"BERTとphoneの長さが一致しません: BERT={bert.size(1)}, phone={len(phone)}"
+        assert ja_bert.size(1) == len(phone), f"ja_BERTとphoneの長さが一致しません: ja_BERT={ja_bert.size(1)}, phone={len(phone)}"
+
         phone = torch.LongTensor(phone)
         tone = torch.LongTensor(tone)
         language = torch.LongTensor(language)
@@ -255,6 +240,7 @@ class TextAudioSpeakerCollate:
         wav_padded.zero_()
         bert_padded.zero_()
         ja_bert_padded.zero_()
+
         for i in range(len(ids_sorted_decreasing)):
             row = batch[ids_sorted_decreasing[i]]
 

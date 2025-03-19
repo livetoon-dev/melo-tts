@@ -10,7 +10,7 @@ from melo import attentions
 from torch.nn import Conv1d, ConvTranspose1d, Conv2d
 from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 
-from melo.commons import init_weights, get_padding
+from melo.commons import init_weights, get_padding, sequence_mask
 import melo.monotonic_align as monotonic_align
 
 
@@ -361,27 +361,26 @@ class TextEncoder(nn.Module):
         self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
 
     def forward(self, x, x_lengths, tone, language, bert, ja_bert, g=None):
-        bert_emb = self.bert_proj(bert).transpose(1, 2)
-        ja_bert_emb = self.bert_proj(ja_bert).transpose(1, 2)
-        x = (
-            self.emb(x)
-            + self.tone_emb(tone)
-            + self.language_emb(language)
-            + bert_emb
-            + ja_bert_emb
-        ) * math.sqrt(
-            self.hidden_channels
-        )  # [b, t, h]
-        x = torch.transpose(x, 1, -1)  # [b, h, t]
-        x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
-            x.dtype
-        )
+        # デバッグ情報を出力
+        print(f"TextEncoder input shapes:")
+        print(f"x: {x.shape}")
+        print(f"x_lengths: {x_lengths}")
+        print(f"tone: {tone.shape}")
+        print(f"language: {language.shape}")
+        print(f"bert: {bert.shape}")
+        print(f"ja_bert: {ja_bert.shape}")
+        if g is not None:
+            print(f"g: {g.shape}")
 
-        x = self.encoder(x * x_mask, x_mask, g=g)
+        x = self.emb(x) * math.sqrt(self.hidden_channels)  # [b, t, h]
+        x = torch.transpose(x, 1, -1)  # [b, h, t]
+        x_mask = torch.unsqueeze(sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
+
+        x = self.encoder(x, x_mask, tone, language, bert, ja_bert, g)
         stats = self.proj(x) * x_mask
 
-        m, logs = torch.split(stats, self.out_channels, dim=1)
-        return x, m, logs, x_mask
+        m, logs = torch.split(stats, [self.out_channels, self.out_channels], dim=1)
+        return m, logs, x_mask
 
 
 class ResidualCouplingBlock(nn.Module):
@@ -460,7 +459,7 @@ class PosteriorEncoder(nn.Module):
         self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
 
     def forward(self, x, x_lengths, g=None, tau=1.0):
-        x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
+        x_mask = torch.unsqueeze(sequence_mask(x_lengths, x.size(2)), 1).to(
             x.dtype
         )
         x = self.pre(x) * x_mask
@@ -897,9 +896,7 @@ class SynthesizerTrn(nn.Module):
             g_p = None
         else:
             g_p = g
-        x, m_p, logs_p, x_mask = self.enc_p(
-            x, x_lengths, tone, language, bert, ja_bert, g=g_p
-        )
+        x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths, tone, language, bert, ja_bert, g=g_p)
         z, m_q, logs_q, y_mask = self.enc_q(y, y_lengths, g=g)
         z_p = self.flow(z, y_mask, g=g)
 
@@ -1008,7 +1005,11 @@ class SynthesizerTrn(nn.Module):
             x_mask.dtype
         )
         attn_mask = torch.unsqueeze(x_mask, 2) * torch.unsqueeze(y_mask, -1)
-        attn = commons.generate_path(w_ceil, attn_mask)
+        attn = (
+            monotonic_align.maximum_path(w_ceil, attn_mask.squeeze(1))
+            .unsqueeze(1)
+            .detach()
+        )
 
         m_p = torch.matmul(attn.squeeze(1), m_p.transpose(1, 2)).transpose(
             1, 2

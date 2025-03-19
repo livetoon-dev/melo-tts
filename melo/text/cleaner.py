@@ -1,122 +1,188 @@
+# cleaner.py
+
 from . import chinese, japanese, english, chinese_mix, korean, french, spanish
 from . import cleaned_text_to_sequence
-import copy
 import torch
-from typing import Tuple, List
+import unicodedata
+from sudachipy import tokenizer as sudachi_tokenizer
+from sudachipy import dictionary as sudachi_dictionary
+import pyopenjtalk
+from typing import Tuple, List, Dict
+from transformers import AutoTokenizer, AutoModel
+import gc
 
-from style_bert_vits2.nlp.japanese.g2p import g2p as g2p_sbv
-from style_bert_vits2.nlp.japanese.normalizer import normalize_text as normalize_text_sbv2
-from style_bert_vits2.nlp.japanese.bert_feature import (
-    extract_bert_feature,
-)
-from style_bert_vits2.constants import Languages
-from style_bert_vits2.nlp import bert_models
 from .symbols import symbols, JP_PHONE_MAPPING
-from .bert_based_tokenizer import create_japanese_bert_tokenizer
 
-language_module_map = {"ZH": chinese, "JP": japanese, "JA": japanese, "EN": english, 'ZH_MIX_EN': chinese_mix, 'KR': korean,
-                    'FR': french, 'SP': spanish, 'ES': spanish}
+language_module_map = {"ZH": chinese, "JP": japanese, "JA": japanese, "EN": english,
+                       'ZH_MIX_EN': chinese_mix, 'KR': korean, 'FR': french, 'SP': spanish, 'ES': spanish}
 
-def g2p_pyopenjtalk(text):
+# グローバルキャッシュ
+_bert_model_cache: Dict[str, AutoModel] = {}
+_bert_tokenizer_cache = None
+
+def get_bert_model(device: str = "cpu") -> AutoModel:
+    """BERTモデルをキャッシュして取得する"""
+    global _bert_model_cache
+    if device not in _bert_model_cache:
+        # GPUメモリ確保のためにキャッシュをクリア
+        if torch.cuda.is_available() and device.startswith("cuda"):
+            torch.cuda.empty_cache()
+            gc.collect()
+        
+        _bert_model_cache[device] = AutoModel.from_pretrained(
+            "line-corporation/line-distilbert-base-japanese",
+            trust_remote_code=True
+        ).to(device)
+        
+        # 評価モードに設定して最適化
+        _bert_model_cache[device].eval()
+    
+    return _bert_model_cache[device]
+
+def get_bert_tokenizer() -> AutoTokenizer:
+    """BERTトークナイザーをキャッシュして取得する"""
+    global _bert_tokenizer_cache
+    if _bert_tokenizer_cache is None:
+        _bert_tokenizer_cache = AutoTokenizer.from_pretrained(
+            "line-corporation/line-distilbert-base-japanese",
+            trust_remote_code=True
+        )
+    
+    return _bert_tokenizer_cache
+
+def normalize_text(text: str) -> str:
+    """テキストの正規化を行う"""
+    # 全角文字を半角に変換
+    text = unicodedata.normalize('NFKC', text)
+    # 特殊文字の置換
+    text = text.replace('・', '')
+    text = text.replace('ー', 'ー')
+    text = text.replace('ッ', 'ッ')
+    # 余分な空白を削除
+    text = ' '.join(text.split())
+    return text
+
+def safe_int_convert(s: str) -> int:
     """
-    G2P変換をpyopenjtalkまたはpyopenjtalk-plusで行う
+    文字列を整数に変換する。数値でない場合は0を返す
     """
     try:
-        import pyopenjtalk
-    except ImportError:
-        raise ImportError("pyopenjtalkまたはpyopenjtalk-plusがインストールされていません。")
+        return int(s)
+    except ValueError:
+        return 0
 
-    result = pyopenjtalk.g2p(text)
-    # pyopenjtalk.g2pが文字列を返す場合、空白で分割する
-    if isinstance(result, str):
-        phonemes = result.split()
-    else:
-        phonemes = result
-
-    # 簡易的に全ての音素のトーンは0とする（改善の余地あり）
-    tones = [0] * len(phonemes)
-    # word2phは、テキストの各文字に対して1音素とし、開始・終了記号を含む
-    word2ph = [1] * (len(text) + 2)
-    return phonemes, tones, word2ph
-
-def clean_text(text, language, use_sudachi=False):
-    language_module = language_module_map[language]
-    sbv_norm_text = normalize_text_sbv2(text)
-
-    if use_sudachi:
-        print("Sudachiによる分かち書きを使用しています。")
-        phones, tones, word2ph = g2p_sbv(sbv_norm_text, use_sudachi=True)
-    else:
-        print("pyopenjtalk-plus（またはpyopenjtalk）によるG2P変換を使用しています。")
-        phones, tones, word2ph = g2p_pyopenjtalk(sbv_norm_text)
-
-    # 音素をフィルタリング
-    if language.upper() in ["JA", "JP"]:
-        valid_phones = []
-        for p in phones:
-            if p in symbols:
-                valid_phones.append(p)
-            elif p in JP_PHONE_MAPPING and JP_PHONE_MAPPING[p] in symbols:
-                valid_phones.append(JP_PHONE_MAPPING[p])
-            else:
-                print(f"Warning: Unknown phone {p} - replacing with '_'")
-                valid_phones.append('_')
-        phones = valid_phones
-
-    return sbv_norm_text, phones, tones, word2ph
-
-
-def clean_text_bert(text: str, language: str, device=None, use_sudachi=False) -> Tuple[str, List[str], List[int], List[int], torch.Tensor]:
+def text_to_phonemes(text: str, use_jp_extra: bool = True, raise_yomi_error: bool = False) -> tuple[list[str], list[int], list[int]]:
     """
-    テキストを正規化し、BERT特徴量と音素情報を抽出する
-    
+    テキストを音素列に変換する
     Args:
         text (str): 入力テキスト
-        language (str): 言語コード
-        device: 計算デバイス
-        use_sudachi (bool): 使用しない（互換性のために残している）
+        use_jp_extra (bool): Falseの場合、「ん」の音素を「N」ではなく「n」とする
+        raise_yomi_error (bool): Falseの場合、読めない文字が「'」として発音される
+    Returns: (音素リスト, トーンリスト, word2ph)
+    """
+    norm_text = normalize_text(text)
     
-    Returns:
-        Tuple[str, List[str], List[int], List[int], torch.Tensor]:
-            - 正規化されたテキスト
-            - 音素列
-            - トーン情報
-            - word2ph（各トークンの音素数）
-            - BERT特徴量
+    # japanese.pyのg2pを使用
+    phones, tones, word2ph = japanese.g2p(norm_text, use_jp_extra=use_jp_extra, raise_yomi_error=raise_yomi_error)
+    
+    return phones, tones, word2ph
+
+def clean_text(text: str, language: str) -> tuple[str, list[str], list[int], list[int], list[int]]:
+    """
+    テキストを正規化し、音素情報を抽出する
+    Returns: (正規化テキスト, 音素リスト, トーンリスト, word2ph, ph2word)
     """
     if language.upper() in ["JA", "JP"]:
-        # BERTトークナイザーベースの処理を使用
-        tokenizer = create_japanese_bert_tokenizer()
-        
-        # テキストの正規化とG2P変換
-        phones, tones, word2ph = tokenizer.process_text(text)
-        
-        # 音素のフィルタリングと標準化
-        valid_phones = []
-        for phone in phones:
-            if phone in symbols:
-                valid_phones.append(phone)
-            elif phone in JP_PHONE_MAPPING and JP_PHONE_MAPPING[phone] in symbols:
-                valid_phones.append(JP_PHONE_MAPPING[phone])
-            else:
-                print(f"Warning: Unknown phone {phone} - replacing with '_'")
-                valid_phones.append('_')
-        
-        # BERT特徴量の抽出
-        from .japanese_bert import get_bert_feature
-        bert = get_bert_feature(text, word2ph, device=device)
-        
-        return normalize_text_sbv2(text), valid_phones, tones, word2ph, bert
+        # 音素変換
+        phones, tones, word2ph = text_to_phonemes(text)
+        return text, phones, tones, word2ph
     else:
-        # 他の言語の処理（変更なし）
         language_module = language_module_map[language]
-        return language_module.clean_text_bert(text)
+        return language_module.clean_text(text)
 
+def get_bert_features(text: str, device: str) -> torch.Tensor:
+    """BERT特徴量を取得する"""
+    # キャッシュからBERTモデルとトークナイザーを取得
+    tokenizer = get_bert_tokenizer()
+    model = get_bert_model(device)
+    
+    # トークン化とBERT特徴量の取得
+    with torch.no_grad():
+        inputs = tokenizer(text, return_tensors="pt", padding=True)
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        outputs = model(**inputs)
+        bert = outputs.last_hidden_state.squeeze(0)
+        bert = bert.transpose(0, 1)
+        return bert
 
-def text_to_sequence(text, language):
+def clean_text_bert(text: str, language: str, device: str = "cpu") -> tuple[str, list[str], list[int], list[int], torch.Tensor]:
+    """
+    テキストを正規化し、BERT特徴量を取得する
+    Returns: (正規化テキスト, 音素リスト, トーンリスト, word2ph, BERT特徴量)
+    """
+    if language in ["JP", "JA"]:
+        norm_text = normalize_text(text)
+        # g2p処理で音素リスト、アクセント、word2phを取得
+        phones, tones, word2ph = text_to_phonemes(norm_text)
+        # BERT特徴量の取得（形状：(embedding_dim, token_length)）
+        bert = get_bert_features(norm_text, device)
+        
+        # BERT特徴量を音素レベルに合わせる
+        token_length = bert.shape[1]
+        expected_token_entries = len(word2ph)
+        phone_length = sum(word2ph)
+        
+        if token_length == expected_token_entries:
+            # 各トークンの特徴量を、word2ph の値だけリピートする
+            aligned_features = []
+            for i, repeat in enumerate(word2ph):
+                token_feature = bert[:, i].unsqueeze(1)  # shape: (embedding_dim, 1)
+                aligned_features.append(token_feature.repeat(1, repeat))
+            aligned_bert = torch.cat(aligned_features, dim=1)  # shape: (embedding_dim, phone_length)
+        else:
+            # もし token_length と word2ph の数が一致しない場合は、線形補間でリサイズ
+            aligned_bert = align_by_interpolation(bert.transpose(0, 1), phone_length).transpose(0, 1)
+        
+        return norm_text, phones, tones, word2ph, aligned_bert
+    else:
+        # 日本語以外の場合は従来の処理
+        return clean_text(text, language)
+
+def align_by_interpolation(bert_features, target_length):
+    """
+    BERTの特徴量をphone長に合わせて補間
+    style-bert-vits2方式: BERT×2+1でphoneに合わせる
+    """
+    device = bert_features.device  # 入力テンソルと同じデバイスを使用
+    
+    if target_length == bert_features.shape[0] * 2 + 1:
+        # BERT×2+1のケース
+        output = torch.zeros((target_length, bert_features.shape[1]), device=device)
+        for i in range(bert_features.shape[0]):
+            # 各BERTトークンを2つの位置にコピー
+            output[i*2] = bert_features[i]
+            output[i*2+1] = bert_features[i]
+        # 最後の位置には最後のBERT特徴量を使用
+        output[-1] = bert_features[-1]
+        return output
+    else:
+        # 従来の線形補間（フォールバック）
+        source_indices = torch.linspace(0, len(bert_features)-1, target_length, device=device)
+        source_indices_floor = source_indices.floor().long()
+        source_indices_ceil = source_indices.ceil().long()
+        source_indices_frac = source_indices - source_indices_floor
+
+        features_floor = bert_features[source_indices_floor]
+        features_ceil = bert_features[source_indices_ceil]
+
+        return features_floor + (features_ceil - features_floor) * source_indices_frac.unsqueeze(-1)
+
+def text_to_sequence(text: str, language: str) -> list[int]:
+    """
+    テキストをシーケンスに変換する
+    """
     norm_text, phones, tones, word2ph = clean_text(text, language)
     return cleaned_text_to_sequence(phones, tones, language)
-
 
 if __name__ == "__main__":
     pass

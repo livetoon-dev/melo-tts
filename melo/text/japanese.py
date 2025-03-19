@@ -1,12 +1,17 @@
+# japanese.py
+
 # Convert Japanese text to phonemes which is
 # compatible with Julius https://github.com/julius-speech/segmentation-kit
 import re
 import unicodedata
+from typing import List, Tuple
+from sudachipy import tokenizer as sudachi_tokenizer
+from sudachipy import dictionary as sudachi_dictionary
+import pyopenjtalk
 
 from transformers import AutoTokenizer
 
-from . import symbols
-punctuation = ["!", "?", "…", ",", ".", "'", "-"]
+from .symbols import ja_symbols, punctuation
 
 # MeCabのインポートをコメントアウトして、例外を回避
 # try:
@@ -14,6 +19,150 @@ punctuation = ["!", "?", "…", ",", ".", "'", "-"]
 # except ImportError as e:
 #     raise ImportError("Japanese requires mecab-python3 and unidic-lite.") from e
 from num2words import num2words
+
+# Sudachi初期化は一度だけ
+_sudachi_dict = sudachi_dictionary.Dictionary(dict="full")
+_sudachi_tokenizer_obj = _sudachi_dict.create(mode=sudachi_tokenizer.Tokenizer.SplitMode.C)
+
+# 句読点の定義
+PUNCTUATIONS = [',', '.', '!', '?', ';', ':', '"', "'", '(', ')', '[', ']', '{', '}', '-', '—', '–', '…']
+
+# 母音の定義
+VOWELS = ['a', 'i', 'u', 'e', 'o']
+
+# カタカナから音素へのマッピング
+MORA_KATA_TO_MORA_PHONEMES = {
+    'ア': (None, 'a'), 'イ': (None, 'i'), 'ウ': (None, 'u'), 'エ': (None, 'e'), 'オ': (None, 'o'),
+    'カ': ('k', 'a'), 'キ': ('k', 'i'), 'ク': ('k', 'u'), 'ケ': ('k', 'e'), 'コ': ('k', 'o'),
+    'サ': ('s', 'a'), 'シ': ('sh', 'i'), 'ス': ('s', 'u'), 'セ': ('s', 'e'), 'ソ': ('s', 'o'),
+    'タ': ('t', 'a'), 'チ': ('ch', 'i'), 'ツ': ('ts', 'u'), 'テ': ('t', 'e'), 'ト': ('t', 'o'),
+    'ナ': ('n', 'a'), 'ニ': ('n', 'i'), 'ヌ': ('n', 'u'), 'ネ': ('n', 'e'), 'ノ': ('n', 'o'),
+    'ハ': ('h', 'a'), 'ヒ': ('h', 'i'), 'フ': ('f', 'u'), 'ヘ': ('h', 'e'), 'ホ': ('h', 'o'),
+    'マ': ('m', 'a'), 'ミ': ('m', 'i'), 'ム': ('m', 'u'), 'メ': ('m', 'e'), 'モ': ('m', 'o'),
+    'ヤ': ('y', 'a'), 'ユ': ('y', 'u'), 'ヨ': ('y', 'o'),
+    'ラ': ('r', 'a'), 'リ': ('r', 'i'), 'ル': ('r', 'u'), 'レ': ('r', 'e'), 'ロ': ('r', 'o'),
+    'ワ': ('w', 'a'), 'ヲ': ('w', 'o'), 'ン': ('N', None),
+    'ガ': ('g', 'a'), 'ギ': ('g', 'i'), 'グ': ('g', 'u'), 'ゲ': ('g', 'e'), 'ゴ': ('g', 'o'),
+    'ザ': ('z', 'a'), 'ジ': ('j', 'i'), 'ズ': ('z', 'u'), 'ゼ': ('z', 'e'), 'ゾ': ('z', 'o'),
+    'ダ': ('d', 'a'), 'ヂ': ('j', 'i'), 'ヅ': ('z', 'u'), 'デ': ('d', 'e'), 'ド': ('d', 'o'),
+    'バ': ('b', 'a'), 'ビ': ('b', 'i'), 'ブ': ('b', 'u'), 'ベ': ('b', 'e'), 'ボ': ('b', 'o'),
+    'パ': ('p', 'a'), 'ピ': ('p', 'i'), 'プ': ('p', 'u'), 'ペ': ('p', 'e'), 'ポ': ('p', 'o'),
+    'キャ': ('ky', 'a'), 'キュ': ('ky', 'u'), 'キョ': ('ky', 'o'),
+    'シャ': ('sh', 'a'), 'シュ': ('sh', 'u'), 'ショ': ('sh', 'o'),
+    'チャ': ('ch', 'a'), 'チュ': ('ch', 'u'), 'チョ': ('ch', 'o'),
+    'ニャ': ('ny', 'a'), 'ニュ': ('ny', 'u'), 'ニョ': ('ny', 'o'),
+    'ヒャ': ('hy', 'a'), 'ヒュ': ('hy', 'u'), 'ヒョ': ('hy', 'o'),
+    'ミャ': ('my', 'a'), 'ミュ': ('my', 'u'), 'ミョ': ('my', 'o'),
+    'リャ': ('ry', 'a'), 'リュ': ('ry', 'u'), 'リョ': ('ry', 'o'),
+    'ギャ': ('gy', 'a'), 'ギュ': ('gy', 'u'), 'ギョ': ('gy', 'o'),
+    'ジャ': ('j', 'a'), 'ジュ': ('j', 'u'), 'ジョ': ('j', 'o'),
+    'ビャ': ('by', 'a'), 'ビュ': ('by', 'u'), 'ビョ': ('by', 'o'),
+    'ピャ': ('py', 'a'), 'ピュ': ('py', 'u'), 'ピョ': ('py', 'o'),
+}
+
+def text_to_sep_kata(text: str, raise_yomi_error: bool = False) -> tuple[list[str], list[str]]:
+    """
+    テキストをカタカナに変換する
+    Args:
+        text (str): 正規化されたテキスト
+        raise_yomi_error (bool): Falseの場合、読めない文字が「'」として発音される
+    Returns: (単語リスト, カタカナリスト)
+    """
+    # Sudachiでトークン化
+    tokens = _sudachi_tokenizer_obj.tokenize(text)
+    
+    words = []
+    katas = []
+    
+    for token in tokens:
+        word = token.surface()
+        yomi = token.reading_form()
+        
+        if not yomi:
+            if raise_yomi_error:
+                raise ValueError(f"読めない文字があります: {word}")
+            else:
+                yomi = "'"  # 読めない文字の場合は「'」を使用
+        
+        words.append(word)
+        katas.append(yomi)
+    
+    return words, katas
+
+def text_normalize(text):
+    """日本語テキストの正規化を行う関数"""
+    # 全角文字を半角に変換
+    text = unicodedata.normalize('NFKC', text)
+    
+    # 数字を漢数字に変換
+    text = re.sub(r'\d+', lambda x: num2words(int(x.group()), lang='ja'), text)
+    
+    # 特殊文字の置換
+    text = text.replace('ー', 'ー')
+    text = text.replace('～', 'ー')
+    text = text.replace('…', '...')
+    text = text.replace('—', '-')
+    text = text.replace('―', '-')
+    text = text.replace('－', '-')
+    text = text.replace('‐', '-')
+    text = text.replace('‑', '-')
+    text = text.replace('−', '-')
+    text = text.replace('「', '"')
+    text = text.replace('」', '"')
+    text = text.replace('『', '"')
+    text = text.replace('』', '"')
+    text = text.replace('（', '(')
+    text = text.replace('）', ')')
+    text = text.replace('［', '[')
+    text = text.replace('］', ']')
+    text = text.replace('【', '[')
+    text = text.replace('】', ']')
+    text = text.replace('〔', '{')
+    text = text.replace('〕', '}')
+    text = text.replace('《', '<')
+    text = text.replace('》', '>')
+    text = text.replace('〈', '<')
+    text = text.replace('〉', '>')
+    text = text.replace('《', '<')
+    text = text.replace('》', '>')
+    text = text.replace('『', '"')
+    text = text.replace('』', '"')
+    text = text.replace('「', '"')
+    text = text.replace('」', '"')
+    text = text.replace('・', ' ')
+    text = text.replace('…', '...')
+    text = text.replace('〜', '~')
+    text = text.replace('～', '~')
+    text = text.replace('ー', 'ー')
+    text = text.replace('―', '-')
+    text = text.replace('－', '-')
+    text = text.replace('‐', '-')
+    text = text.replace('‑', '-')
+    text = text.replace('−', '-')
+    text = text.replace('（', '(')
+    text = text.replace('）', ')')
+    text = text.replace('［', '[')
+    text = text.replace('］', ']')
+    text = text.replace('【', '[')
+    text = text.replace('】', ']')
+    text = text.replace('〔', '{')
+    text = text.replace('〕', '}')
+    text = text.replace('《', '<')
+    text = text.replace('》', '>')
+    text = text.replace('〈', '<')
+    text = text.replace('〉', '>')
+    text = text.replace('《', '<')
+    text = text.replace('》', '>')
+    text = text.replace('『', '"')
+    text = text.replace('』', '"')
+    text = text.replace('「', '"')
+    text = text.replace('」', '"')
+    text = text.replace('・', ' ')
+    text = text.replace('…', '...')
+    text = text.replace('〜', '~')
+    text = text.replace('～', '~')
+    
+    return text
 
 _CONVRULES = [
     # Conversion of 2 letters
@@ -331,8 +480,6 @@ def _makerulemap():
 _RULEMAP1, _RULEMAP2 = _makerulemap()
 
 
-# symbols.py内で定義されたja_symbolsを直接インポート
-from text.symbols import ja_symbols, punctuation
 # ja_symbolsを使いやすいリストに変換
 ja_symbols_list = ja_symbols
 
@@ -570,156 +717,69 @@ def text_to_phonemes(text):
     
     return valid_phones
 
-def g2p(norm_text):
+def g2p(text: str) -> tuple[list[str], list[int], list[int]]:
     """
-    日本語テキストを音素、トーン、単語-音素マッピングに変換します。
-    ja_symbolsで定義された音素のみを使用します。
+    テキストを音素列に変換する
+    Returns: (音素リスト, トーンリスト, word2ph)
     """
-    # 空文字チェック
-    if not norm_text or norm_text.isspace():
-        return ["_"], [0], [1]
-
-    try:
-        # テキストの正規化
-        normalized_text = norm_text.replace('　', ' ')
-        
-        # トークン化
-        tokenized = tokenizer.tokenize(normalized_text)
-        
-        # トークン化結果の検証
-        if not tokenized:
-            return ["_"], [0], [1]
+    # テキストを正規化
+    norm_text = text_normalize(text)
+    
+    # 単語とカタカナに分割
+    words, katas = text_to_sep_kata(norm_text)
+    
+    all_phones = []
+    all_tones = []
+    word2ph = []
+    
+    for word, kata in zip(words, katas):
+        try:
+            # pyopenjtalkを使用して音素変換
+            phonemes = pyopenjtalk.g2p(kata)
+            if isinstance(phonemes, str):
+                phonemes = phonemes.split()
             
-        # 音素とword2phのリスト
-        phs = []
-        ph_groups = []
-        
-        # トークングループの作成
-        current_group = []
-        for t in tokenized:
-            if not t.startswith("#"):
-                if current_group:
-                    ph_groups.append(current_group)
-                current_group = [t]
+            if phonemes:
+                # フルコンテキストラベルを取得してアクセント情報を解析
+                full_context = pyopenjtalk.extract_fullcontext(kata)
+                
+                # アクセント情報を解析
+                word_tones = []
+                for label in full_context:
+                    # A:フィールドからアクセント情報を抽出
+                    if 'A:' in label:
+                        acc_info = label.split('A:')[1].split('/')[0]
+                        acc_parts = acc_info.split('+')
+                        
+                        # アクセント情報を安全に取得
+                        acc_dist = int(acc_parts[0]) if acc_parts[0].isdigit() else 0
+                        mora_pos = int(acc_parts[1]) if acc_parts[1].isdigit() else 0
+                        mora_count = int(acc_parts[2]) if acc_parts[2].isdigit() else 0
+                        
+                        # アクセント核の判定
+                        if acc_dist == 0:  # アクセント核
+                            word_tones.append(1)
+                        elif acc_dist > 0:  # アクセント核以降
+                            word_tones.append(0)
+                        else:  # アクセント核以前
+                            word_tones.append(1)
+                
+                # 音素とトーンを追加
+                all_phones.extend(phonemes)
+                all_tones.extend(word_tones)
+                word2ph.append(len(phonemes))
             else:
-                if not current_group:
-                    current_group = [t.replace("#", "")]
-                else:
-                    current_group.append(t.replace("#", ""))
-        
-        # 最後のグループを追加
-        if current_group:
-            ph_groups.append(current_group)
-            
-        # グループが作成できなかった場合の対応
-        if not ph_groups:
-            return ["_"], [0], [1]
-        
-        # 各グループを処理
-        word2ph = []
-        for group in ph_groups:
-            # グループ内のトークンを結合
-            text = "".join(group)
-            
-            # 特殊ケース: [UNK]トークン
-            if text == '[UNK]' or text in punctuation:
-                phs += ['_' if text == '[UNK]' else text]
-                word2ph += [1]
-                continue
-                
-            # 音素への変換
-            try:
-                # text_to_phonemes関数で音素に変換
-                phonemes = text_to_phonemes(text)
-                
-                # 音素変換結果の検証
-                if not phonemes:
-                    phs += ['_']
-                    word2ph += [1] * len(group)
-                    continue
-                
-                # 音素とトークンの長さを取得
-                phone_len = len(phonemes)
-                word_len = len(group)
-                
-                # word2phの計算
-                if phone_len > 0 and word_len > 0:
-                    # 音素をトークンに分配
-                    word_ph_mapping = distribute_phone(phone_len, word_len)
-                    word2ph += word_ph_mapping
-                else:
-                    word2ph += [1] * max(1, word_len)
-                
-                # 有効な音素をphsリストに追加
-                phs += phonemes
-                
-            except Exception as e:
-                # エラー時の処理
-                phs += ['_']
-                word2ph += [1] * len(group)
-        
-        # 最終チェック
-        if not phs:
-            phs = ["_"]
-        if not word2ph:
-            word2ph = [1]
-            
-        # 音素リストの前後にパディング追加
-        phones = ["_"] + phs + ["_"]
-        # 日本語はトーンなし
-        tones = [0 for _ in phones]
-        # word2phの前後にパディング追加
-        word2ph = [1] + word2ph + [1]
-        
-        # word2phの長さ確認と調整
-        if len(word2ph) != len(tokenized) + 2:
-            if len(word2ph) > len(tokenized) + 2:
-                word2ph = word2ph[:len(tokenized) + 2]
-            else:
-                word2ph = word2ph + [1] * ((len(tokenized) + 2) - len(word2ph))
-        
-        return phones, tones, word2ph
-        
-    except Exception as e:
-        # エラー時の最小限の返り値
-        return ["_"], [0], [1]
-
-# g2p_sbv関数
-def g2p_sbv(norm_text, use_sudachi=False):
-    """
-    style_bert_vits2のg2p関数と互換性を持たせるためのラッパー。
-    use_sudachi=Trueの場合、Sudachiを使って漢字をカタカナに変換します。
-    """
-    try:
-        if use_sudachi:
-            try:
-                # Sudachiをインポート
-                from sudachipy import tokenizer, dictionary
-                
-                # Sudachiの辞書とトークナイザーを初期化
-                sudachi_tokenizer_obj = dictionary.Dictionary().create()
-                sudachi_mode = tokenizer.Tokenizer.SplitMode.C  # 最も細かい分割モード
-                
-                # テキストをトークナイズしてカタカナ読みに変換
-                morphs = sudachi_tokenizer_obj.tokenize(norm_text, sudachi_mode)
-                kata_text = "".join([m.reading_form() for m in morphs])
-                
-                print(f"Sudachiによる変換: '{norm_text}' → '{kata_text}'")
-                
-                # カタカナ変換されたテキストを処理
-                return g2p(kata_text)
-            except ImportError:
-                print("Sudachiがインストールされていないため、通常の処理を行います。")
-                return g2p(norm_text)
-            except Exception as e:
-                print(f"Sudachi処理エラー: {e}")
-                return g2p(norm_text)
-        else:
-            print("use_sudachi=Falseのため、通常の処理を行います。")
-            return g2p(norm_text)
-    except Exception as e:
-        print(f"g2p_sbv処理エラー: {e} (text: '{norm_text}')")
-        return ["_"], [0], [1]
+                # 音素変換が完全に失敗した場合
+                all_phones.append('_')
+                all_tones.append(0)
+                word2ph.append(1)
+        except Exception as e:
+            print(f"音素変換に失敗: {word} (読み: {kata}): {e}")
+            all_phones.append('_')
+            all_tones.append(0)
+            word2ph.append(1)
+    
+    return all_phones, all_tones, word2ph
 
 def get_bert_feature(text, word2ph, device):
     from text import japanese_bert
@@ -727,7 +787,6 @@ def get_bert_feature(text, word2ph, device):
 
 
 if __name__ == "__main__":
-    # tokenizer = AutoTokenizer.from_pretrained("./bert/bert-base-japanese-v3")
     text = "こんにちは、世界！..."
     text = 'ええ、僕はおきなと申します。こちらの小さいわらべは杏子。ご挨拶が遅れてしまいすみません。あなたの名は?'
     text = 'あの、お前以外のみんなは、全員生きてること?'
@@ -739,18 +798,3 @@ if __name__ == "__main__":
     bert = get_bert_feature(text, word2ph)
 
     print(phones, tones, word2ph, bert.shape)
-
-# if __name__ == '__main__':
-#     from pykakasi import kakasi
-#     # Initialize kakasi object
-#     kakasi = kakasi()
-
-#     # Set options for converting Chinese characters to Katakana
-#     kakasi.setMode("J", "H")  # Chinese to Katakana
-#     kakasi.setMode("K", "H")  # Hiragana to Katakana
-
-#     # Convert Chinese characters to Katakana
-#     conv = kakasi.getConverter()
-#     katakana_text = conv.do('ええ、僕はおきなと申します。こちらの小さいわらべは杏子。ご挨拶が遅れてしまいすみません。あなたの名は?')  # Replace with your Chinese text
-
-#     print(katakana_text)  # Output: ニーハオセカイ

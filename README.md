@@ -212,3 +212,84 @@ This library is under MIT License, which means it is free for both commercial an
 ## Acknowledgements
 
 This implementation is based on [TTS](https://github.com/coqui-ai/TTS), [VITS](https://github.com/jaywalnut310/vits), [VITS2](https://github.com/daniilrobnikov/vits2) and [Bert-VITS2](https://github.com/fishaudio/Bert-VITS2). We appreciate their awesome work.
+
+# MeloTTS
+
+MeloTTSは、高品質な音声合成を実現するためのTTS（Text-to-Speech）エンジンです。
+
+## 機能
+
+- 高品質な音声合成
+- 複数の言語サポート
+- 感情表現の制御
+- 高速な推論処理
+
+## インストール
+
+```bash
+pip install melo-tts
+```
+
+## 使用方法
+
+### 基本的な使用
+
+```python
+from melo_tts import MeloTTS
+
+# TTSエンジンの初期化
+tts = MeloTTS()
+
+# テキストから音声を生成
+text = "こんにちは、世界！"
+audio = tts.synthesize(text)
+```
+
+### 推論時のBERT特徴量抽出
+
+MeloTTSは推論時にBERT特徴量を効率的に抽出します。以下の機能が利用可能です：
+
+```python
+from melo_tts.text import ImprovedJapaneseBertFeatureExtractor
+
+# 特徴量抽出器の初期化
+extractor = ImprovedJapaneseBertFeatureExtractor()
+
+# 基本的な特徴量抽出
+text = "こんにちは"
+word2ph = [1, 1, 1, 1, 1]  # 各トークンが1つの音素に対応
+feature = extractor.get_bert_feature(text, word2ph)
+
+# 感情分析による補助テキストを使用
+feature = extractor.get_bert_feature(text, word2ph, use_sentiment_assist=True)
+
+# カスタム補助テキストを使用
+feature = extractor.get_bert_feature(text, word2ph, assist_text="嬉しい", assist_text_weight=0.7)
+```
+
+#### 推論時の特徴
+
+1. **効率的なリソース管理**
+   - モデルとトークナイザーは自動的にキャッシュされます
+   - メモリ使用量が最適化されます
+   - 推論速度が向上します
+
+2. **自動デバイス選択**
+   - GPUが利用可能な場合は自動的にGPUを使用
+   - Apple Siliconの場合はMPSを利用
+   - それ以外の場合はCPUを使用
+
+3. **安定した推論**
+   - エラー時も代替特徴量を生成
+   - 推論が中断されることはありません
+   - 詳細なログ出力で問題追跡が容易
+
+4. **バッチ処理対応**
+   - 複数のテキストを一度に処理可能
+   - 推論効率が向上
+
+#### 注意点
+
+- 推論時は`torch.no_grad()`が自動的に適用されます
+- キャッシュ機能により、メモリ使用量は一定に保たれます
+- エラー時は代替特徴量が生成されるため、推論は継続されます

@@ -229,7 +229,9 @@ def g2p(text, pad_start_end=True, tokenized=None):
     phones = []
     tones = []
     word2ph = []
-    for group in ph_groups:
+    ph2word = []  # 追加：音素から単語へのマッピング
+    
+    for i, group in enumerate(ph_groups):
         w = "".join(group)
         phone_len = 0
         word_len = len(group)
@@ -251,13 +253,17 @@ def g2p(text, pad_start_end=True, tokenized=None):
                 phone_len += 1
         aaa = distribute_phone(phone_len, word_len)
         word2ph += aaa
+        ph2word.extend([i] * phone_len)  # 追加：各音素に対応する単語のインデックス
+    
     phones = [post_replace_ph(i) for i in phones]
 
     if pad_start_end:
         phones = ["_"] + phones + ["_"]
         tones = [0] + tones + [0]
         word2ph = [1] + word2ph + [1]
-    return phones, tones, word2ph
+        ph2word = [-1] + ph2word + [-1]  # 追加：パディング用のインデックス
+    
+    return phones, tones, word2ph, ph2word
 
 def get_bert_feature(text, word2ph, device=None):
     from text import english_bert
@@ -270,7 +276,7 @@ if __name__ == "__main__":
     from text.english_bert import get_bert_feature
     text = "In this paper, we propose 1 DSPGAN, a N-F-T GAN-based universal vocoder."
     text = text_normalize(text)
-    phones, tones, word2ph = g2p(text)
+    phones, tones, word2ph, ph2word = g2p(text)
     import pdb; pdb.set_trace()
     bert = get_bert_feature(text, word2ph)
     
