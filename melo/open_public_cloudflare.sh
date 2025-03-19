@@ -4,7 +4,7 @@
 
 # 변수 설정
 WORKSPACE_DIR="/home/ydk/workspace/melo-tts/melo"
-LOG_DIR="logs/default_5"
+LOG_DIR="logs/uranai-2"
 TENSORBOARD_PORT=6006
 TENSORBOARD_LOG="tensorboard.log"
 CLOUDFLARE_LOG="cloudflare.log"

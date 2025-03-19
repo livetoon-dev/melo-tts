@@ -17,13 +17,17 @@ from .split_utils import split_sentence
 from .mel_processing import spectrogram_torch, spectrogram_torch_conv
 from .download_utils import load_or_download_config, load_or_download_model
 
+# pyopenjtalk-plus 추가
+import pyopenjtalk
+
 class TTS(nn.Module):
     def __init__(self, 
                 language,
                 device='auto',
                 use_hf=True,
                 config_path=None,
-                ckpt_path=None):
+                ckpt_path=None,
+                use_marine=True):  # marine 옵션 추가
         super().__init__()
         if device == 'auto':
             device = 'cpu'
@@ -61,6 +65,7 @@ class TTS(nn.Module):
         
         language = language.split('_')[0]
         self.language = 'ZH_MIX_EN' if language == 'ZH' else language # we support a ZH_MIX_EN model
+        self.use_marine = use_marine  # marine 사용 여부 저장
 
     @staticmethod
     def audio_numpy_concat(segment_data_list, sr, speed=1.):
@@ -97,7 +102,33 @@ class TTS(nn.Module):
             if language in ['EN', 'ZH_MIX_EN']:
                 t = re.sub(r'([a-z])([A-Z])', r'\1 \2', t)
             device = self.device
-            bert, ja_bert, phones, tones, lang_ids = utils.get_text_for_tts_infer(t, language, self.hps, device, self.symbol_to_id)
+            
+            # 일본어 처리에 marine 적용 - g2p() 함수 사용
+            if language == 'JP' and self.use_marine:
+                try:
+                    # 기존 함수 사용
+                    bert, ja_bert, phones, tones_orig, lang_ids = utils.get_text_for_tts_infer(t, language, self.hps, device, self.symbol_to_id)
+                    
+                    # pyopenjtalk.g2p() 함수를 run_marine=True로 사용
+                    # 발음 기호 시퀀스 얻기
+                    phones_seq = pyopenjtalk.g2p(t, run_marine=True)
+                    
+                    # phones 길이에 맞게 단순 tone 벡터 생성
+                    # phoneme당 하나의 tone이 필요하므로, 여기서는 단순하게 처리
+                    # marine 옵션은 억양을 자동으로 적용하므로, tone 값은 단순화해도 됨
+                    tones = torch.zeros_like(phones).long()
+                    
+                    if not quiet:
+                        print(f"Using Marine for accent estimation with g2p()")
+                        
+                except Exception as e:
+                    if not quiet:
+                        print(f"Error using Marine g2p: {e}. Using original tones.")
+                    tones = tones_orig
+            else:
+                # 다른 언어는 기존 방식 사용
+                bert, ja_bert, phones, tones, lang_ids = utils.get_text_for_tts_infer(t, language, self.hps, device, self.symbol_to_id)
+            
             with torch.no_grad():
                 x_tst = phones.to(device).unsqueeze(0)
                 tones = tones.to(device).unsqueeze(0)

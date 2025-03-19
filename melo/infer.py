@@ -14,7 +14,7 @@ def main(ckpt_path, text, language, output_dir):
         raise ValueError("The model_path must be specified")
     
     config_path = os.path.join(os.path.dirname(ckpt_path), 'config.json')
-    model = TTS(language=language, config_path=config_path, ckpt_path=ckpt_path,device="cpu")
+    model = TTS(language=language, config_path=config_path, ckpt_path=ckpt_path,device="cpu",use_marine=True)
     
     for spk_name, spk_id in model.hps.data.spk2id.items():
         save_path = f'{output_dir}/{spk_name}/output.wav'

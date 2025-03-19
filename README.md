@@ -17,6 +17,7 @@
   
   ```bash
   curl -LsSf https://astral.sh/uv/install.sh | sh
+  source $HOME/.local/bin/env
   uv sync
   ```
 
@@ -26,6 +27,7 @@
   ```bash
   cd melo
   uv run python -m unidic download
+  uv pip install -r requirements.txt
   uv pip install pyopenjtalk-plus
   ```
 

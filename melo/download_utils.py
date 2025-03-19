@@ -65,3 +65,15 @@ def load_or_download_model(locale, device, use_hf=True, ckpt_path=None):
 
 def load_pretrain_model():
     return [cached_path(url) for url in PRETRAINED_MODELS.values()]
+
+def load_local_pretrain_model(pretrain_dir):
+    """로컬 폴더에서 사전 학습 모델을 로드합니다."""
+    g_path = os.path.join(pretrain_dir, "G_0.pth")
+    d_path = os.path.join(pretrain_dir, "D_0.pth")
+    dur_path = os.path.join(pretrain_dir, "DUR_0.pth")
+    
+    if not os.path.exists(g_path) or not os.path.exists(d_path) or not os.path.exists(dur_path):
+        print(f"Warning: 사전 학습 모델 파일을 찾을 수 없습니다: {pretrain_dir}")
+        return None, None, None
+    
+    return g_path, d_path, dur_path
