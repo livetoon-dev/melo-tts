@@ -175,7 +175,26 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
                 bert = bert  # 通常のBERTを使用（1024次元）
                 ja_bert = torch.zeros(768, len(phone))  # ja_bertは使用しない
             elif language_str in ["JP", "EN", "ZH_MIX_EN", "KR", 'SP', 'ES', 'FR', 'DE', 'RU']:  # その他の言語の場合
-                ja_bert = bert  # ja_bertとしてBERTを使用（768次元）
+                # BERTの長さをphoneの長さに合わせる
+                token_length = bert.shape[1]
+                expected_token_entries = len(word2ph)
+                phone_length = len(phone)
+                
+                if token_length == expected_token_entries:
+                    # 各トークンの特徴量を、word2ph の値だけリピートする
+                    aligned_features = []
+                    for i, repeat in enumerate(word2ph):
+                        token_feature = bert[:, i].unsqueeze(1)  # shape: (embedding_dim, 1)
+                        aligned_features.append(token_feature.repeat(1, repeat))
+                    ja_bert = torch.cat(aligned_features, dim=1)  # shape: (embedding_dim, phone_length)
+                else:
+                    # もし token_length と word2ph の数が一致しない場合は、線形補間でリサイズ
+                    ja_bert = torch.nn.functional.interpolate(
+                        bert.unsqueeze(0),
+                        size=phone_length,
+                        mode='linear',
+                        align_corners=False
+                    ).squeeze(0)
                 bert = torch.zeros(1024, len(phone))  # 通常のBERTは使用しない
             else:
                 raise ValueError(f"Unsupported language: {language_str}")
