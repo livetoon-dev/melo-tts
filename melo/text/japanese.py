@@ -60,33 +60,34 @@ MORA_KATA_TO_MORA_PHONEMES = {
     'ピャ': ('py', 'a'), 'ピュ': ('py', 'u'), 'ピョ': ('py', 'o'),
 }
 
-def text_to_sep_kata(text: str, raise_yomi_error: bool = False) -> tuple[list[str], list[str]]:
+def text_to_sep_kata(text):
     """
-    テキストをカタカナに変換する
-    Args:
-        text (str): 正規化されたテキスト
-        raise_yomi_error (bool): Falseの場合、読めない文字が「'」として発音される
-    Returns: (単語リスト, カタカナリスト)
+    Split text into words and get the corresponding katakana.
     """
-    # Sudachiでトークン化
-    tokens = _sudachi_tokenizer_obj.tokenize(text)
-    
+    text = re.sub(r"[\n ]+", " ", text)
+    text = text.translate(
+        str.maketrans({",": "，", ".": "。", "-": "ー"})
+    )  # 句読点などを全角に
     words = []
     katas = []
-    
-    for token in tokens:
-        word = token.surface()
-        yomi = token.reading_form()
-        
-        if not yomi:
-            if raise_yomi_error:
-                raise ValueError(f"読めない文字があります: {word}")
+    res = pyopenjtalk.g2p(text, kana=True).split(" ")
+    for item in res:
+        if item in punctuation:
+            words.append(item)
+            katas.append(item)
+        else:
+            # pyopenjtalk.g2p は未知語をそのまま返す場合がある
+            kata = pyopenjtalk.g2p(item, kana=True)
+            if kata:
+                # カタカナに変換できない場合は、未知語として扱う
+                if any(c.isupper() for c in kata): # 大文字が含まれる場合
+                    kata = "_" # 未知語は "_" に置き換え
+                words.append(item)
+                katas.append(kata)
             else:
-                yomi = "'"  # 読めない文字の場合は「'」を使用
-        
-        words.append(word)
-        katas.append(yomi)
-    
+                # 変換に失敗した場合は、単語をunknown symbolで埋める
+                words.append(item)
+                katas.append("_")
     return words, katas
 
 def text_normalize(text):
@@ -482,11 +483,6 @@ _RULEMAP1, _RULEMAP2 = _makerulemap()
 
 # ja_symbolsを使いやすいリストに変換
 ja_symbols_list = ja_symbols
-
-# 日本語の音素変換に必要な定数
-# トークナイザーのインポート
-model_id = 'ku-nlp/deberta-v2-base-japanese-char-wwm'
-tokenizer = AutoTokenizer.from_pretrained(model_id)
 
 # 音素分配関数
 def distribute_phone(n_phone, n_word):

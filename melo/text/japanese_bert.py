@@ -2,10 +2,7 @@
 
 import torch
 from transformers import AutoModel, AutoTokenizer
-from .bert_based_tokenizer import create_japanese_bert_tokenizer
 import sys
-import numpy as np
-import os
 import pyopenjtalk
 from typing import List, Tuple, Dict, Optional
 import torch.nn.functional as F

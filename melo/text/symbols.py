@@ -1,5 +1,5 @@
 # punctuation = ["!", "?", "…", ",", ".", "'", "-"]
-punctuation = ["!", "?", "…", ",", ".", "'", "-", "¿", "¡"]
+punctuation = ["!", "?", "…", ",", ".", "'", "-", "¿", "¡", '"', "-", "—", " "]
 pu_symbols = punctuation + ["SP", "UNK"]
 pad = "_"
 
@@ -75,57 +75,50 @@ num_zh_tones = 6
 
 # japanese
 ja_symbols = [
-    "N",
     "a",
-    "a:",
-    "b",
-    "by",
-    "c",
-    "ch",
-    "cl",
-    "d",
-    "dy",
-    "e",
-    "e:",
-    "f",
-    "g",
-    "gy",
-    "h",
-    "hy",
     "i",
-    "i:",
-    "j",
-    "k",
-    "ky",
-    "l",
-    "m",
-    "my",
-    "n",
-    "ny",
-    "o",
-    "o:",
-    "p",
-    "py",
-    "q",
-    "r",
-    "ry",
-    "s",
-    "sh",
-    "t",
-    "ts",
-    "ty",
     "u",
-    "u:",
-    "v",
-    "w",
-    "x",
+    "e",
+    "o",
+    "A",  # 無声化母音, 長音
+    "I",  # 無声化母音
+    "U",  # 無声化母音
+    "E",
+    "O",
+    "k",
+    "s",
+    "t",
+    "n",
+    "h",
+    "m",
     "y",
+    "r",
+    "w",
+    "g",
     "z",
-    "zy",
-    "'",
-    "-",
-    ":",
-    "pau",
+    "d",
+    "b",
+    "p",
+    "ky",
+    "sh",
+    "ch",
+    "ny",
+    "hy",
+    "my",
+    "ry",
+    "gy",
+    "j",
+    "dy",
+    "by",
+    "py",
+    "f",
+    "ts",
+    "kw",
+    "gw",  # 拗音拡張
+    "N",  # 撥音 (ん)
+    "cl",  # 促音 (っ)
+    "pau",  # ポーズ
+    ":", # 長音記号
 ]
 num_ja_tones = 1
 
@@ -273,7 +266,7 @@ num_ru_tones = 1
 # combine all symbols
 normal_symbols = sorted(set(zh_symbols + ja_symbols + en_symbols + kr_symbols + es_symbols + fr_symbols + de_symbols + ru_symbols))
 symbols = [pad] + normal_symbols + pu_symbols
-sil_phonemes_ids = [symbols.index(i) for i in pu_symbols]
+sil_phonemes_ids = [symbols.index(i) for i in punctuation]
 
 # combine all tones
 num_tones = num_zh_tones + num_ja_tones + num_en_tones + num_kr_tones + num_es_tones + num_fr_tones + num_de_tones + num_ru_tones
@@ -343,3 +336,5 @@ if __name__ == "__main__":
     a = set(zh_symbols)
     b = set(en_symbols)
     print(sorted(a & b))
+    print("利用可能な音素:", sorted(symbols))
+    print("音素の総数:", len(symbols))
