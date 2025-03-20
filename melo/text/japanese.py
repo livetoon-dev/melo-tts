@@ -4,13 +4,9 @@
 # compatible with Julius https://github.com/julius-speech/segmentation-kit
 import re
 import unicodedata
-from typing import List, Tuple
 from sudachipy import tokenizer as sudachi_tokenizer
 from sudachipy import dictionary as sudachi_dictionary
 import pyopenjtalk
-
-from transformers import AutoTokenizer
-
 from .symbols import ja_symbols, punctuation
 
 # MeCabのインポートをコメントアウトして、例外を回避
@@ -60,34 +56,33 @@ MORA_KATA_TO_MORA_PHONEMES = {
     'ピャ': ('py', 'a'), 'ピュ': ('py', 'u'), 'ピョ': ('py', 'o'),
 }
 
-def text_to_sep_kata(text):
+def text_to_sep_kata(text: str, raise_yomi_error: bool = False) -> tuple[list[str], list[str]]:
     """
-    Split text into words and get the corresponding katakana.
+    テキストをカタカナに変換する
+    Args:
+        text (str): 正規化されたテキスト
+        raise_yomi_error (bool): Falseの場合、読めない文字が「'」として発音される
+    Returns: (単語リスト, カタカナリスト)
     """
-    text = re.sub(r"[\n ]+", " ", text)
-    text = text.translate(
-        str.maketrans({",": "，", ".": "。", "-": "ー"})
-    )  # 句読点などを全角に
+    # Sudachiでトークン化
+    tokens = _sudachi_tokenizer_obj.tokenize(text)
+    
     words = []
     katas = []
-    res = pyopenjtalk.g2p(text, kana=True).split(" ")
-    for item in res:
-        if item in punctuation:
-            words.append(item)
-            katas.append(item)
-        else:
-            # pyopenjtalk.g2p は未知語をそのまま返す場合がある
-            kata = pyopenjtalk.g2p(item, kana=True)
-            if kata:
-                # カタカナに変換できない場合は、未知語として扱う
-                if any(c.isupper() for c in kata): # 大文字が含まれる場合
-                    kata = "_" # 未知語は "_" に置き換え
-                words.append(item)
-                katas.append(kata)
+    
+    for token in tokens:
+        word = token.surface()
+        yomi = token.reading_form()
+        
+        if not yomi:
+            if raise_yomi_error:
+                raise ValueError(f"読めない文字があります: {word}")
             else:
-                # 変換に失敗した場合は、単語をunknown symbolで埋める
-                words.append(item)
-                katas.append("_")
+                yomi = "'"  # 読めない文字の場合は「'」を使用
+        
+        words.append(word)
+        katas.append(yomi)
+    
     return words, katas
 
 def text_normalize(text):
@@ -780,19 +775,23 @@ def g2p(text: str) -> tuple[list[str], list[int], list[int]]:
     return all_phones, all_tones, word2ph
 
 def get_bert_feature(text, word2ph, device):
-    from text import japanese_bert
-    return japanese_bert.get_bert_feature(text, word2ph, device=device)
+    from melo.text.japanese_bert import get_bert_feature
+    return get_bert_feature(text, word2ph, device=device)
 
 
 if __name__ == "__main__":
     text = "こんにちは、世界！..."
     text = 'ええ、僕はおきなと申します。こちらの小さいわらべは杏子。ご挨拶が遅れてしまいすみません。あなたの名は?'
     text = 'あの、お前以外のみんなは、全員生きてること?'
-    from text.japanese_bert import get_bert_feature
+    from melo.text.japanese_bert import get_bert_feature
+    import torch
 
     text = text_normalize(text)
     print(text)
     phones, tones, word2ph = g2p(text)
-    bert = get_bert_feature(text, word2ph)
+    
+    # deviceパラメータを追加
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    bert = get_bert_feature(text, word2ph, device)
 
     print(phones, tones, word2ph, bert.shape)
