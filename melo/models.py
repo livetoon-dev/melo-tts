@@ -380,7 +380,7 @@ class TextEncoder(nn.Module):
         stats = self.proj(x) * x_mask
 
         m, logs = torch.split(stats, [self.out_channels, self.out_channels], dim=1)
-        return m, logs, x_mask
+        return x, m, logs, x_mask
 
 
 class ResidualCouplingBlock(nn.Module):

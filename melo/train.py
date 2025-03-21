@@ -611,7 +611,7 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                     {
                         f"gen/audio_{batch_idx}_{use_sdp}": y_hat[
                             0, :, : y_hat_lengths[0]
-                        ]
+                        ].cpu().detach()
                     }
                 )
                 image_dict.update(
@@ -621,7 +621,9 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                         )
                     }
                 )
-                audio_dict.update({f"gt/audio_{batch_idx}": y[0, :, : y_lengths[0]]})
+                audio_dict.update(
+                    {f"gt/audio_{batch_idx}": y[0, :, : y_lengths[0]].cpu().detach()}
+                )
 
     utils.summarize(
         writer=writer_eval,
