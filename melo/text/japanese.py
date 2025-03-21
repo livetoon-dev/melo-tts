@@ -7,7 +7,7 @@ import unicodedata
 from sudachipy import tokenizer as sudachi_tokenizer
 from sudachipy import dictionary as sudachi_dictionary
 import pyopenjtalk
-from .symbols import ja_symbols, punctuation
+from .symbols import ja_symbols, punctuation, pad, JP_PHONE_MAPPING
 
 # MeCabのインポートをコメントアウトして、例外を回避
 # try:
@@ -721,63 +721,198 @@ def g2p(text: str) -> tuple[list[str], list[int], list[int]]:
     # 単語とカタカナに分割
     words, katas = text_to_sep_kata(norm_text)
     
-    all_phones = []
-    all_tones = []
-    word2ph = []
+    # punctuation無しの音素とアクセントのタプルのリストを取得
+    phone_tone_list_wo_punct = __g2phone_tone_wo_punct(norm_text)
     
-    for word, kata in zip(words, katas):
+    # 各単語ごとの音素のリストを取得
+    sep_phonemes = []
+    for kata in katas:
         try:
-            # pyopenjtalkを使用して音素変換
             phonemes = pyopenjtalk.g2p(kata)
             if isinstance(phonemes, str):
                 phonemes = phonemes.split()
-            
-            if phonemes:
-                # フルコンテキストラベルを取得してアクセント情報を解析
-                full_context = pyopenjtalk.extract_fullcontext(kata)
-                
-                # アクセント情報を解析
-                word_tones = []
-                for label in full_context:
-                    # A:フィールドからアクセント情報を抽出
-                    if 'A:' in label:
-                        acc_info = label.split('A:')[1].split('/')[0]
-                        acc_parts = acc_info.split('+')
-                        
-                        # アクセント情報を安全に取得
-                        acc_dist = int(acc_parts[0]) if acc_parts[0].isdigit() else 0
-                        mora_pos = int(acc_parts[1]) if acc_parts[1].isdigit() else 0
-                        mora_count = int(acc_parts[2]) if acc_parts[2].isdigit() else 0
-                        
-                        # アクセント核の判定
-                        if acc_dist == 0:  # アクセント核
-                            word_tones.append(1)
-                        elif acc_dist > 0:  # アクセント核以降
-                            word_tones.append(0)
-                        else:  # アクセント核以前
-                            word_tones.append(1)
-                
-                # 音素とトーンを追加
-                all_phones.extend(phonemes)
-                all_tones.extend(word_tones)
-                word2ph.append(len(phonemes))
-            else:
-                # 音素変換が完全に失敗した場合
-                all_phones.append('_')
-                all_tones.append(0)
-                word2ph.append(1)
-        except Exception as e:
-            print(f"音素変換に失敗: {word} (読み: {kata}): {e}")
-            all_phones.append('_')
-            all_tones.append(0)
-            word2ph.append(1)
+            sep_phonemes.append(phonemes if phonemes else ["_"])
+        except:
+            sep_phonemes.append(["_"])
     
-    return all_phones, all_tones, word2ph
+    # 音素リストを結合（punctuationを保持）
+    phones_with_punct = []
+    for phonemes in sep_phonemes:
+        phones_with_punct.extend(phonemes)
+    
+    # punctuationを含めたアクセント情報を生成
+    phone_tone_list = __align_tones(phones_with_punct, phone_tone_list_wo_punct)
+    
+    # word2phの計算
+    word2ph = []
+    for phonemes in sep_phonemes:
+        word2ph.append(len(phonemes))
+    
+    # 開始・終了記号を追加
+    phone_tone_list = [("_", 0)] + phone_tone_list + [("_", 0)]
+    word2ph = [1] + word2ph + [1]
+    
+    # 結果を分離
+    phones = [phone for phone, _ in phone_tone_list]
+    tones = [tone for _, tone in phone_tone_list]
+    
+    return phones, tones, word2ph
+
+def __g2phone_tone_wo_punct(text: str) -> list[tuple[str, int]]:
+    """アクセント情報付きの音素リストを生成"""
+    prosodies = __pyopenjtalk_g2p_prosody(text, drop_unvoiced_vowels=True)
+    result: list[tuple[str, int]] = []
+    current_tone = 0  # 初期トーンは0（低）
+    current_phrase: list[tuple[str, int]] = []
+    
+    for letter in prosodies.split():
+        if letter == "^":  # 文頭記号
+            continue
+        elif letter in ["$", "?", "_", "#"]:  # 文末記号やポーズ
+            # 現在のフレーズを結果に追加
+            if current_phrase:
+                result.extend(__fix_phone_tone(current_phrase))
+                current_phrase = []
+            current_tone = 0  # トーンをリセット
+        elif letter == "[":
+            current_tone = 1  # 上昇
+        elif letter == "]":
+            current_tone = 0  # 下降
+        else:
+            # 音素の正規化
+            if letter == "I":
+                letter = "i"
+            elif letter == "U":
+                letter = "u"
+            elif letter == "cl":
+                letter = "q"
+            elif letter in JP_PHONE_MAPPING:
+                letter = JP_PHONE_MAPPING[letter]
+                
+            # 有効な音素かチェック
+            if letter in valid_phonemes:
+                current_phrase.append((letter, current_tone))
+            else:
+                print(f"Warning: 未知の音素 '{letter}' をスキップします")
+    
+    # 最後のフレーズを追加
+    if current_phrase:
+        result.extend(__fix_phone_tone(current_phrase))
+    
+    return result
+
+def __fix_phone_tone(phone_tone_list: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    """アクセントの値を0か1の範囲に修正"""
+    if not phone_tone_list:
+        return []
+    
+    # トーン値の集合を取得
+    tone_values = set(tone for _, tone in phone_tone_list)
+    
+    # トーン値が1種類の場合
+    if len(tone_values) == 1:
+        if tone_values == {0}:
+            return phone_tone_list
+        else:
+            # すべて高いトーンの場合、最初の音素を低くする
+            result = [(phone_tone_list[0][0], 0)]
+            result.extend((p, 1) for p, _ in phone_tone_list[1:])
+            return result
+    
+    # トーン値が2種類の場合
+    elif len(tone_values) == 2:
+        if tone_values == {0, 1}:
+            return phone_tone_list
+        elif tone_values == {-1, 0}:
+            return [(p, 0 if t == -1 else 1) for p, t in phone_tone_list]
+    
+    # それ以外の場合（エラー）
+    print(f"Warning: Unexpected tone values: {tone_values}")
+    return [(p, 0) for p, _ in phone_tone_list]
 
 def get_bert_feature(text, word2ph, device):
     from melo.text.japanese_bert import get_bert_feature
     return get_bert_feature(text, word2ph, device=device)
 
+def __pyopenjtalk_g2p_prosody(text: str, drop_unvoiced_vowels: bool = True) -> str:
+    """OpenJTalkから音素とアクセント情報を抽出"""
+    labels = pyopenjtalk.make_label(pyopenjtalk.run_frontend(text))
+    N = len(labels)
+    phones = []
+    
+    def _numeric_feature_by_regex(pattern: re.Pattern[str], s: str) -> int:
+        match = pattern.search(s)
+        if match is None:
+            return -50
+        return int(match.group(1))
+    
+    for n in range(N):
+        lab_curr = labels[n]
+        # 現在の音素を取得
+        p3 = re.search(r"\-(.*?)\+", lab_curr).group(1)
+        
+        # 無声母音の処理
+        if drop_unvoiced_vowels and p3 in "AEIOU":
+            p3 = p3.lower()
+        
+        # silenceの処理
+        if p3 == "sil":
+            if n == 0:
+                phones.append("^")
+            elif n == N - 1:
+                e3 = _numeric_feature_by_regex(re.compile(r"!(\d+)_"), lab_curr)
+                phones.append("$" if e3 == 0 else "?")
+            continue
+        elif p3 == "pau":
+            phones.append("_")
+            continue
+        else:
+            phones.append(p3)
+        
+        # アクセント情報の抽出
+        a1 = _numeric_feature_by_regex(re.compile(r"/A:([0-9\-]+)\+"), lab_curr)
+        a2 = _numeric_feature_by_regex(re.compile(r"\+(\d+)\+"), lab_curr)
+        a3 = _numeric_feature_by_regex(re.compile(r"\+(\d+)/"), lab_curr)
+        f1 = _numeric_feature_by_regex(re.compile(r"/F:(\d+)_"), lab_curr)
+        
+        if n + 1 < N:
+            a2_next = _numeric_feature_by_regex(re.compile(r"\+(\d+)\+"), labels[n + 1])
+            # アクセント句境界
+            if a3 == 1 and a2_next == 1 and p3 in "aeiouAEIOUNcl":
+                phones.append("#")
+            # ピッチ下降
+            elif a1 == 0 and a2_next == a2 + 1 and a2 != f1:
+                phones.append("]")
+            # ピッチ上昇
+            elif a2 == 1 and a2_next == 2:
+                phones.append("[")
+    
+    return " ".join(phones)
+
+def __align_tones(phones_with_punct: list[str], phone_tone_list_wo_punct: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    """句読点を含む音素列にアクセント情報を付与"""
+    result = []
+    punct_idx = 0
+    
+    for phone in phones_with_punct:
+        # 句読点の場合
+        if phone in punctuation:
+            result.append((phone, 0))
+        # 通常の音素の場合
+        else:
+            if punct_idx < len(phone_tone_list_wo_punct):
+                orig_phone, tone = phone_tone_list_wo_punct[punct_idx]
+                # 音素が一致しない場合は警告
+                if orig_phone != phone:
+                    print(f"Warning: 音素の不一致: expected={orig_phone}, actual={phone}")
+                result.append((phone, tone))
+                punct_idx += 1
+            else:
+                # 予期しない音素の場合は0を割り当て
+                print(f"Warning: 予期しない音素: {phone}")
+                result.append((phone, 0))
+    
+    return result
 
 if __name__ == "__main__":
     text = "こんにちは、世界！..."
