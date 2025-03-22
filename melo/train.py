@@ -292,9 +292,7 @@ def run():
             scheduler_dur_disc.step()
 
 
-def train_and_evaluate(
-    rank, epoch, hps, nets, optims, schedulers, scaler, loaders, logger, writers
-):
+def train_and_evaluate(rank, current_epoch, hps, nets, optims, schedulers, scaler, loaders, logger, writers):
     net_g, net_d, net_dur_disc = nets
     optim_g, optim_d, optim_dur_disc = optims
     scheduler_g, scheduler_d, scheduler_dur_disc = schedulers
@@ -302,283 +300,194 @@ def train_and_evaluate(
     if writers is not None:
         writer, writer_eval = writers
 
-    train_loader.batch_sampler.set_epoch(epoch)
+    train_loader.batch_sampler.set_epoch(current_epoch)
     global global_step
 
     net_g.train()
     net_d.train()
-    if net_dur_disc is not None:
-        net_dur_disc.train()
-    for batch_idx, (
-        x,
-        x_lengths,
-        spec,
-        spec_lengths,
-        y,
-        y_lengths,
-        speakers,
-        tone,
-        language,
-        bert,
-        ja_bert,
-    ) in enumerate(tqdm(train_loader)):
-        if net_g.module.use_noise_scaled_mas:
-            current_mas_noise_scale = (
-                net_g.module.mas_noise_scale_initial
-                - net_g.module.noise_scale_delta * global_step
-            )
-            net_g.module.current_mas_noise_scale = max(current_mas_noise_scale, 0.0)
-        x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(
-            rank, non_blocking=True
-        )
-        spec, spec_lengths = spec.cuda(rank, non_blocking=True), spec_lengths.cuda(
-            rank, non_blocking=True
-        )
-        y, y_lengths = y.cuda(rank, non_blocking=True), y_lengths.cuda(
-            rank, non_blocking=True
-        )
-        speakers = speakers.cuda(rank, non_blocking=True)
-        tone = tone.cuda(rank, non_blocking=True)
-        language = language.cuda(rank, non_blocking=True)
-        bert = bert.cuda(rank, non_blocking=True)
-        ja_bert = ja_bert.cuda(rank, non_blocking=True)
+    for batch_idx, batch in enumerate(train_loader):
+        try:
+            # バッチデータの形状を確認
+            print("Batch shapes:")
+            for i, item in enumerate(batch):
+                if isinstance(item, torch.Tensor):
+                    print(f"Item {i}: {item.shape}")
+                else:
+                    print(f"Item {i}: {type(item)}")
+            
+            # モデルに渡す前にデータの形状を確認
+            x, x_lengths, spec, spec_lengths, wav, wav_lengths, sid, tone, language, bert, ja_bert = batch
+            print("\nModel input shapes:")
+            print(f"x: {x.shape}")
+            print(f"x_lengths: {x_lengths.shape}")
+            print(f"spec: {spec.shape}")
+            print(f"spec_lengths: {spec_lengths.shape}")
+            print(f"sid: {sid.shape}")
+            print(f"tone: {tone.shape}")
+            print(f"language: {language.shape}")
+            print(f"bert: {bert.shape}")
+            print(f"ja_bert: {ja_bert.shape}")
 
-        with autocast(enabled=hps.train.fp16_run):
-            (
-                y_hat,
-                l_length,
-                attn,
-                ids_slice,
-                x_mask,
-                z_mask,
-                (z, z_p, m_p, logs_p, m_q, logs_q),
-                (hidden_x, logw, logw_),
-            ) = net_g(
-                x,
-                x_lengths,
-                spec,
-                spec_lengths,
-                speakers,
-                tone,
-                language,
-                bert,
-                ja_bert,
-            )
-            mel = spec_to_mel_torch(
-                spec,
-                hps.data.filter_length,
-                hps.data.n_mel_channels,
-                hps.data.sampling_rate,
-                hps.data.mel_fmin,
-                hps.data.mel_fmax,
-            )
-            y_mel = commons.slice_segments(
-                mel, ids_slice, hps.train.segment_size // hps.data.hop_length
-            )
-            y_hat_mel = mel_spectrogram_torch(
-                y_hat.squeeze(1),
-                hps.data.filter_length,
-                hps.data.n_mel_channels,
-                hps.data.sampling_rate,
-                hps.data.hop_length,
-                hps.data.win_length,
-                hps.data.mel_fmin,
-                hps.data.mel_fmax,
-            )
+            x, x_lengths = x.cuda(rank, non_blocking=True), x_lengths.cuda(rank, non_blocking=True)
+            spec, spec_lengths = spec.cuda(rank, non_blocking=True), spec_lengths.cuda(rank, non_blocking=True)
+            wav, wav_lengths = wav.cuda(rank, non_blocking=True), wav_lengths.cuda(rank, non_blocking=True)
+            sid = sid.cuda(rank, non_blocking=True)
+            tone = tone.cuda(rank, non_blocking=True)
+            language = language.cuda(rank, non_blocking=True)
+            bert = bert.cuda(rank, non_blocking=True)
+            ja_bert = ja_bert.cuda(rank, non_blocking=True)
 
-            y = commons.slice_segments(
-                y, ids_slice * hps.data.hop_length, hps.train.segment_size
-            )  # slice
-
-            # Discriminator
-            y_d_hat_r, y_d_hat_g, _, _ = net_d(y, y_hat.detach())
-            with autocast(enabled=False):
-                loss_disc, losses_disc_r, losses_disc_g = discriminator_loss(
-                    y_d_hat_r, y_d_hat_g
+            with autocast(False):
+                y_hat, l_length, attn, ids_slice, x_mask, z_mask, (z, z_p, m_p, logs_p, m_q, logs_q), (x, logw, logw_) = net_g(
+                    x, x_lengths, spec, spec_lengths, sid, tone, language, bert, ja_bert
                 )
-                loss_disc_all = loss_disc
-            if net_dur_disc is not None:
-                y_dur_hat_r, y_dur_hat_g = net_dur_disc(
-                    hidden_x.detach(), x_mask.detach(), logw.detach(), logw_.detach()
+                mel = spec_to_mel_torch(
+                    spec,
+                    hps.data.filter_length,
+                    hps.data.n_mel_channels,
+                    hps.data.sampling_rate,
+                    hps.data.mel_fmin,
+                    hps.data.mel_fmax,
                 )
-                with autocast(enabled=False):
-                    # TODO: I think need to mean using the mask, but for now, just mean all
-                    (
-                        loss_dur_disc,
-                        losses_dur_disc_r,
-                        losses_dur_disc_g,
-                    ) = discriminator_loss(y_dur_hat_r, y_dur_hat_g)
-                    loss_dur_disc_all = loss_dur_disc
-                optim_dur_disc.zero_grad()
-                scaler.scale(loss_dur_disc_all).backward()
-                scaler.unscale_(optim_dur_disc)
-                commons.clip_grad_value_(net_dur_disc.parameters(), None)
-                scaler.step(optim_dur_disc)
-
-        optim_d.zero_grad()
-        scaler.scale(loss_disc_all).backward()
-        scaler.unscale_(optim_d)
-        grad_norm_d = commons.clip_grad_value_(net_d.parameters(), None)
-        scaler.step(optim_d)
-
-        with autocast(enabled=hps.train.fp16_run):
-            # Generator
-            y_d_hat_r, y_d_hat_g, fmap_r, fmap_g = net_d(y, y_hat)
-            if net_dur_disc is not None:
-                y_dur_hat_r, y_dur_hat_g = net_dur_disc(hidden_x, x_mask, logw, logw_)
-            with autocast(enabled=False):
-                loss_dur = torch.sum(l_length.float())
-                loss_mel = F.l1_loss(y_mel, y_hat_mel) * hps.train.c_mel
-                loss_kl = kl_loss(z_p, logs_q, m_p, logs_p, z_mask) * hps.train.c_kl
-
-                loss_fm = feature_loss(fmap_r, fmap_g)
-                loss_gen, losses_gen = generator_loss(y_d_hat_g)
-                loss_gen_all = loss_gen + loss_fm + loss_mel + loss_dur + loss_kl
-                if net_dur_disc is not None:
-                    loss_dur_gen, losses_dur_gen = generator_loss(y_dur_hat_g)
-                    loss_gen_all += loss_dur_gen
-        optim_g.zero_grad()
-        scaler.scale(loss_gen_all).backward()
-        scaler.unscale_(optim_g)
-        grad_norm_g = commons.clip_grad_value_(net_g.parameters(), None)
-        scaler.step(optim_g)
-        scaler.update()
-
-        if rank == 0:
-            if global_step % hps.train.log_interval == 0:
-                lr = optim_g.param_groups[0]["lr"]
-                losses = [loss_disc, loss_gen, loss_fm, loss_mel, loss_dur, loss_kl]
-                logger.info(
-                    "Train Epoch: {} [{:.0f}%]".format(
-                        epoch, 100.0 * batch_idx / len(train_loader)
-                    )
-                )
-                logger.info([x.item() for x in losses] + [global_step, lr])
-
-                scalar_dict = {
-                    "loss/g/total": loss_gen_all,
-                    "loss/d/total": loss_disc_all,
-                    "learning_rate": lr,
-                    "grad_norm_d": grad_norm_d,
-                    "grad_norm_g": grad_norm_g,
-                }
-                scalar_dict.update(
-                    {
-                        "loss/g/fm": loss_fm,
-                        "loss/g/mel": loss_mel,
-                        "loss/g/dur": loss_dur,
-                        "loss/g/kl": loss_kl,
-                    }
-                )
-                scalar_dict.update(
-                    {"loss/g/{}".format(i): v for i, v in enumerate(losses_gen)}
-                )
-                scalar_dict.update(
-                    {"loss/d_r/{}".format(i): v for i, v in enumerate(losses_disc_r)}
-                )
-                scalar_dict.update(
-                    {"loss/d_g/{}".format(i): v for i, v in enumerate(losses_disc_g)}
+                y_mel = commons.slice_segments(mel, ids_slice, hps.train.segment_size // hps.data.hop_length)
+                y_hat_mel = mel_spectrogram_torch(
+                    y_hat.squeeze(1).float(),
+                    hps.data.filter_length,
+                    hps.data.n_mel_channels,
+                    hps.data.sampling_rate,
+                    hps.data.hop_length,
+                    hps.data.win_length,
+                    hps.data.mel_fmin,
+                    hps.data.mel_fmax,
                 )
 
-                image_dict = {
-                    "slice/mel_org": utils.plot_spectrogram_to_numpy(
-                        y_mel[0].data.cpu().numpy()
-                    ),
-                    "slice/mel_gen": utils.plot_spectrogram_to_numpy(
-                        y_hat_mel[0].data.cpu().numpy()
-                    ),
-                    "all/mel": utils.plot_spectrogram_to_numpy(
-                        mel[0].data.cpu().numpy()
-                    ),
-                    "all/attn": utils.plot_alignment_to_numpy(
-                        attn[0, 0].data.cpu().numpy()
-                    ),
-                }
-                utils.summarize(
-                    writer=writer,
-                    global_step=global_step,
-                    images=image_dict,
-                    scalars=scalar_dict,
-                )
+                y = commons.slice_segments(wav, ids_slice * hps.data.hop_length, hps.train.segment_size)  # slice
 
-            if global_step % hps.train.eval_interval == 0:
-                evaluate(hps, net_g, eval_loader, writer_eval)
-                utils.save_checkpoint(
-                    net_g,
-                    optim_g,
-                    hps.train.learning_rate,
-                    epoch,
-                    os.path.join(hps.model_dir, "G_{}.pth".format(global_step)),
-                )
-                utils.save_checkpoint(
-                    net_d,
-                    optim_d,
-                    hps.train.learning_rate,
-                    epoch,
-                    os.path.join(hps.model_dir, "D_{}.pth".format(global_step)),
-                )
-                if net_dur_disc is not None:
-                    utils.save_checkpoint(
-                        net_dur_disc,
-                        optim_dur_disc,
-                        hps.train.learning_rate,
-                        epoch,
-                        os.path.join(hps.model_dir, "DUR_{}.pth".format(global_step)),
-                    )
-                # keep_ckpts = getattr(hps.train, "keep_ckpts", 20)
-                # if keep_ckpts > 0:
-                #     utils.clean_checkpoints(
-                #         path_to_models=hps.model_dir,
-                #         n_ckpts_to_keep=keep_ckpts,
-                #         sort_by_time=True,
-                #     )
+                # Discriminator
+                y_d_hat_r, y_d_hat_g, fmap_r, fmap_g = net_d(wav, y_hat.detach())
+                with autocast(False):
+                    loss_disc, losses_disc_r, losses_disc_g = discriminator_loss(y_d_hat_r, y_d_hat_g)
+                    loss_disc_all = loss_disc
+                    if net_dur_disc is not None:
+                        y_dur_hat_r, y_dur_hat_g = net_dur_disc(wav, y_hat.detach(), sid)
+                        loss_dur_disc, losses_dur_disc_r, losses_dur_disc_g = discriminator_loss(y_dur_hat_r, y_dur_hat_g)
+                        loss_disc_all += loss_dur_disc
+                    loss_disc_all = loss_disc_all / hps.train.accumulation_steps
+                scaler.scale(loss_disc_all).backward()
+                if global_step % hps.train.accumulation_steps == 0:
+                    scaler.unscale_(optim_d)
+                    grad_norm_d = commons.clip_grad_value_(net_d.parameters(), None)
+                    scaler.step(optim_d)
+                    scaler.update()
+                    optim_d.zero_grad()
+                    if net_dur_disc is not None:
+                        scaler.unscale_(optim_dur_disc)
+                        grad_norm_dur_disc = commons.clip_grad_value_(net_dur_disc.parameters(), None)
+                        scaler.step(optim_dur_disc)
+                        scaler.update()
+                        optim_dur_disc.zero_grad()
 
-        global_step += 1
+                # Generator
+                with autocast(False):
+                    loss_mel = F.l1_loss(y_mel, y_hat_mel) * hps.train.c_mel
+                    loss_kl = kl_loss(z_p, logs_q, m_p, logs_p, z_mask) * hps.train.c_kl
+
+                    loss_fm = feature_loss(fmap_r, fmap_g)
+                    loss_gen, losses_gen = generator_loss(y_d_hat_g)
+                    loss_gen_all = loss_gen + loss_fm + loss_mel + loss_kl + l_length
+                    loss_gen_all = loss_gen_all / hps.train.accumulation_steps
+                scaler.scale(loss_gen_all).backward()
+                if global_step % hps.train.accumulation_steps == 0:
+                    scaler.unscale_(optim_g)
+                    grad_norm_g = commons.clip_grad_value_(net_g.parameters(), None)
+                    scaler.step(optim_g)
+                    scaler.update()
+                    optim_g.zero_grad()
+
+                if rank == 0:
+                    if global_step % hps.train.log_interval == 0:
+                        lr = optim_g.param_groups[0]["lr"]
+                        logger.info(
+                            "Train Epoch: {} [{}/{} ({:.0f}%)]\tLR: {:.6f}".format(
+                                current_epoch,
+                                batch_idx * len(x),
+                                len(train_loader.dataset),
+                                100.0 * batch_idx / len(train_loader),
+                                lr,
+                            )
+                        )
+                        logger.info(
+                            f"Losses: {loss_gen_all.item():.4f} {loss_disc_all.item():.4f}"
+                        )
+
+                global_step += 1
+
+        except Exception as e:
+            print(f"Error in batch processing: {str(e)}")
+            print("Batch contents:")
+            for i, item in enumerate(batch):
+                print(f"Item {i}: {type(item)}")
+            raise
 
     if rank == 0:
-        logger.info("====> Epoch: {}".format(epoch))
-    torch.cuda.empty_cache()
+        if current_epoch % hps.train.save_every_n_epoch == 0:
+            utils.save_checkpoint(
+                net_g,
+                optim_g,
+                hps.train.learning_rate,
+                current_epoch,
+                os.path.join(hps.model_dir, f"G_{global_step}.pth"),
+            )
+            utils.save_checkpoint(
+                net_d,
+                optim_d,
+                hps.train.learning_rate,
+                current_epoch,
+                os.path.join(hps.model_dir, f"D_{global_step}.pth"),
+            )
+            if net_dur_disc is not None:
+                utils.save_checkpoint(
+                    net_dur_disc,
+                    optim_dur_disc,
+                    hps.train.learning_rate,
+                    current_epoch,
+                    os.path.join(hps.model_dir, f"DUR_{global_step}.pth"),
+                )
+
+    global epoch
+    epoch += 1
 
 
 def evaluate(hps, generator, eval_loader, writer_eval):
     generator.eval()
-    image_dict = {}
-    audio_dict = {}
-    print("Evaluating ...")
     with torch.no_grad():
-        for batch_idx, (
-            x,
-            x_lengths,
-            spec,
-            spec_lengths,
-            y,
-            y_lengths,
-            speakers,
-            tone,
-            language,
-            bert,
-            ja_bert,
-        ) in enumerate(eval_loader):
-            x, x_lengths = x.cuda(), x_lengths.cuda()
-            spec, spec_lengths = spec.cuda(), spec_lengths.cuda()
-            y, y_lengths = y.cuda(), y_lengths.cuda()
-            speakers = speakers.cuda()
-            bert = bert.cuda()
-            tone = tone.cuda()
-            language = language.cuda()
-            ja_bert = ja_bert.cuda()
-            for use_sdp in [True, False]:
+        for batch_idx, batch in enumerate(eval_loader):
+            try:
+                x, x_lengths, spec, spec_lengths, wav, wav_lengths, sid, tone, language, bert, ja_bert = batch
+                x, x_lengths = x.cuda(0), x_lengths.cuda(0)
+                spec, spec_lengths = spec.cuda(0), spec_lengths.cuda(0)
+                wav, wav_lengths = wav.cuda(0), wav_lengths.cuda(0)
+                sid = sid.cuda(0)
+                tone = tone.cuda(0)
+                language = language.cuda(0)
+                bert = bert.cuda(0)
+                ja_bert = ja_bert.cuda(0)
+
+                # remove else
+                x = x[0, : x_lengths[0]].unsqueeze(0)
+                x_lengths = x_lengths[0].unsqueeze(0)
+                spec = spec[0, : spec_lengths[0]].unsqueeze(0)
+                spec_lengths = spec_lengths[0].unsqueeze(0)
+                wav = wav[0, : wav_lengths[0]].unsqueeze(0)
+                wav_lengths = wav_lengths[0].unsqueeze(0)
+                sid = sid[0].unsqueeze(0)
+                tone = tone[0, : x_lengths[0]].unsqueeze(0)
+                language = language[0, : x_lengths[0]].unsqueeze(0)
+                bert = bert[0, :, : x_lengths[0]].unsqueeze(0)
+                ja_bert = ja_bert[0, :, : x_lengths[0]].unsqueeze(0)
+
                 y_hat, attn, mask, *_ = generator.module.infer(
-                    x,
-                    x_lengths,
-                    speakers,
-                    tone,
-                    language,
-                    bert,
-                    ja_bert,
-                    y=None,
-                    max_len=1000,
-                    sdp_ratio=0.0 if not use_sdp else 1.0,
+                    x, x_lengths, sid, tone, language, bert, ja_bert, max_len=1000
                 )
                 y_hat_lengths = mask.sum([1, 2]).long() * hps.data.hop_length
 
@@ -600,41 +509,30 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                     hps.data.mel_fmin,
                     hps.data.mel_fmax,
                 )
-                image_dict.update(
-                    {
-                        f"gen/mel_{batch_idx}": utils.plot_spectrogram_to_numpy(
-                            y_hat_mel[0].cpu().numpy()
-                        )
-                    }
+                image_dict = {
+                    "gen/mel": utils.plot_spectrogram_to_numpy(y_hat_mel[0].cpu().numpy())
+                }
+                audio_dict = {"gen/audio": y_hat[0, :, : y_hat_lengths[0]].cpu().numpy()}
+                if global_step == 0:
+                    image_dict.update(
+                        {"gt/mel": utils.plot_spectrogram_to_numpy(mel[0].cpu().numpy())}
+                    )
+                    audio_dict.update({"gt/audio": wav[0, :, : wav_lengths[0]].cpu().numpy()})
+                utils.summarize(
+                    writer=writer_eval,
+                    global_step=global_step,
+                    images=image_dict,
+                    audios=audio_dict,
+                    audio_sampling_rate=hps.data.sampling_rate,
                 )
-                audio_dict.update(
-                    {
-                        f"gen/audio_{batch_idx}_{use_sdp}": y_hat[
-                            0, :, : y_hat_lengths[0]
-                        ].cpu().detach()
-                    }
-                )
-                image_dict.update(
-                    {
-                        f"gt/mel_{batch_idx}": utils.plot_spectrogram_to_numpy(
-                            mel[0].cpu().numpy()
-                        )
-                    }
-                )
-                audio_dict.update(
-                    {f"gt/audio_{batch_idx}": y[0, :, : y_lengths[0]].cpu().detach()}
-                )
+            except Exception as e:
+                print(f"Error in evaluation batch {batch_idx}: {str(e)}")
+                print("Batch contents:")
+                for i, item in enumerate(batch):
+                    print(f"Item {i}: {type(item)}")
+                raise
 
-    utils.summarize(
-        writer=writer_eval,
-        global_step=global_step,
-        images=image_dict,
-        audios=audio_dict,
-        audio_sampling_rate=hps.data.sampling_rate,
-    )
     generator.train()
-    print('Evauate done')
-    torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":

@@ -184,11 +184,10 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
                     # 各トークンの特徴量を、word2ph の値だけリピートする
                     aligned_features = []
                     for i, repeat in enumerate(word2ph):
-                        token_feature = bert[:, i].unsqueeze(1)  # shape: (embedding_dim, 1)
+                        token_feature = bert[:, i].unsqueeze(1)
                         aligned_features.append(token_feature.repeat(1, repeat))
-                    ja_bert = torch.cat(aligned_features, dim=1)  # shape: (embedding_dim, phone_length)
+                    ja_bert = torch.cat(aligned_features, dim=1)
                 else:
-                    # もし token_length と word2ph の数が一致しない場合は、線形補間でリサイズ
                     ja_bert = torch.nn.functional.interpolate(
                         bert.unsqueeze(0),
                         size=phone_length,
@@ -228,7 +227,7 @@ class TextAudioSpeakerCollate:
         """Collate's training batch from normalized text, audio and speaker identities
         PARAMS
         ------
-        batch: [text_normalized, spec_normalized, wav_normalized, sid]
+        batch: [text_normalized, spec_normalized, wav_normalized, sid, tone, language, bert, ja_bert]
         """
         # Right zero-pad all one-hot text sequences to max input length
         _, ids_sorted_decreasing = torch.sort(
