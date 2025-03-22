@@ -576,7 +576,7 @@ def evaluate(hps, generator, eval_loader, writer_eval):
                     language,
                     bert,
                     ja_bert,
-                    y=spec,
+                    y=None,
                     max_len=1000,
                     sdp_ratio=0.0 if not use_sdp else 1.0,
                 )

@@ -104,7 +104,7 @@ class Encoder(nn.Module):
                 g = g.transpose(1, 2)
                 x = x + g
                 x = x * x_mask
-            y = self.attn_layers[i](x, x, attn_mask)
+            y = self.attn_layers[i](x, x, attn_mask, tone=tone, language=language, bert=bert, ja_bert=ja_bert)
             y = self.drop(y)
             x = self.norm_layers_1[i](x + y)
 
@@ -250,22 +250,19 @@ class MultiHeadAttention(nn.Module):
         nn.init.xavier_uniform_(self.conv_q.weight)
         nn.init.xavier_uniform_(self.conv_k.weight)
         nn.init.xavier_uniform_(self.conv_v.weight)
-        if proximal_init:
-            with torch.no_grad():
-                self.conv_k.weight.copy_(self.conv_q.weight)
-                self.conv_k.bias.copy_(self.conv_q.bias)
+        nn.init.xavier_uniform_(self.conv_o.weight)
 
-    def forward(self, x, c, attn_mask=None):
+    def forward(self, x, c, attn_mask=None, tone=None, language=None, bert=None, ja_bert=None):
         q = self.conv_q(x)
         k = self.conv_k(c)
         v = self.conv_v(c)
 
-        x, self.attn = self.attention(q, k, v, mask=attn_mask)
+        x, _ = self.attention(q, k, v, mask=attn_mask, tone=tone, language=language, bert=bert, ja_bert=ja_bert)
 
         x = self.conv_o(x)
         return x
 
-    def attention(self, query, key, value, mask=None):
+    def attention(self, query, key, value, mask=None, tone=None, language=None, bert=None, ja_bert=None):
         # reshape [b, d, t] -> [b, n_h, t, d_k]
         b, d, t_s, t_t = (*key.size(), query.size(2))
         query = query.view(b, self.n_heads, self.k_channels, t_t).transpose(2, 3)
@@ -277,44 +274,25 @@ class MultiHeadAttention(nn.Module):
             assert (
                 t_s == t_t
             ), "Relative attention is only available for self-attention."
-            key_relative_embeddings = self._get_relative_embeddings(self.emb_rel_k, t_s)
-            rel_logits = self._matmul_with_relative_keys(
-                query / math.sqrt(self.k_channels), key_relative_embeddings
+            key_relative_embeddings = self._get_relative_embeddings(
+                self.emb_rel_k, t_s
             )
+            rel_logits = self._matmul_with_relative_keys(query / math.sqrt(self.k_channels), key_relative_embeddings)
             scores_local = self._relative_position_to_absolute_position(rel_logits)
             scores = scores + scores_local
         if self.proximal_bias:
             assert t_s == t_t, "Proximal bias is only available for self-attention."
-            scores = scores + self._attention_bias_proximal(t_s).to(
-                device=scores.device, dtype=scores.dtype
-            )
+            scores = scores + self._attention_bias_proximal(t_s).to(device=scores.device, dtype=scores.dtype)
         if mask is not None:
             scores = scores.masked_fill(mask == 0, -1e4)
             if self.block_length is not None:
-                assert (
-                    t_s == t_t
-                ), "Local attention is only available for self-attention."
-                block_mask = (
-                    torch.ones_like(scores)
-                    .triu(-self.block_length)
-                    .tril(self.block_length)
-                )
+                block_mask = torch.ones_like(scores, dtype=torch.bool).triu(-self.block_length).tril(self.block_length)
                 scores = scores.masked_fill(block_mask == 0, -1e4)
-        p_attn = F.softmax(scores, dim=-1)  # [b, n_h, t_t, t_s]
-        p_attn = self.drop(p_attn)
-        output = torch.matmul(p_attn, value)
-        if self.window_size is not None:
-            relative_weights = self._absolute_position_to_relative_position(p_attn)
-            value_relative_embeddings = self._get_relative_embeddings(
-                self.emb_rel_v, t_s
-            )
-            output = output + self._matmul_with_relative_values(
-                relative_weights, value_relative_embeddings
-            )
-        output = (
-            output.transpose(2, 3).contiguous().view(b, d, t_t)
-        )  # [b, n_h, t_t, d_k] -> [b, d, t_t]
-        return output, p_attn
+        attn = F.softmax(scores, dim=-1)  # [b, h, t_t, t_s]
+        attn = self.drop(attn)
+        x = torch.matmul(attn, value)  # [b, h, t_t, d_k]
+        x = x.transpose(1, 2).contiguous().view(b, t_t, self.n_heads * self.k_channels)  # [b, t_t, h*d_k]
+        return x.transpose(1, 2), attn
 
     def _matmul_with_relative_values(self, x, y):
         """

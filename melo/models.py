@@ -343,11 +343,10 @@ class TextEncoder(nn.Module):
         nn.init.normal_(self.tone_emb.weight, 0.0, hidden_channels**-0.5)
         self.language_emb = nn.Embedding(num_languages, hidden_channels)
         nn.init.normal_(self.language_emb.weight, 0.0, hidden_channels**-0.5)
-        self.bert_proj = nn.Conv1d(768, hidden_channels, 1)
-        self.bert_proj_1024 = nn.Conv1d(1024, hidden_channels, 1)
-        self.style_proj = nn.Linear(512, hidden_channels)
-        self.tone_emb = nn.Embedding(512, hidden_channels)
-        self.language_emb = nn.Embedding(10, hidden_channels)
+        self.bert_proj = nn.Conv1d(1024, hidden_channels, 1)
+        nn.init.xavier_uniform_(self.bert_proj.weight)
+        self.ja_bert_proj = nn.Conv1d(768, hidden_channels, 1)
+        nn.init.xavier_uniform_(self.ja_bert_proj.weight)
 
         self.encoder = attentions.Encoder(
             hidden_channels,
@@ -361,22 +360,19 @@ class TextEncoder(nn.Module):
         self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
 
     def forward(self, x, x_lengths, tone, language, bert, ja_bert, g=None):
-        # デバッグ情報を出力
-        print(f"TextEncoder input shapes:")
-        print(f"x: {x.shape}")
-        print(f"x_lengths: {x_lengths}")
-        print(f"tone: {tone.shape}")
-        print(f"language: {language.shape}")
-        print(f"bert: {bert.shape}")
-        print(f"ja_bert: {ja_bert.shape}")
-        if g is not None:
-            print(f"g: {g.shape}")
-
-        x = self.emb(x) * math.sqrt(self.hidden_channels)  # [b, t, h]
+        bert_emb = self.bert_proj(bert).transpose(1, 2)
+        ja_bert_emb = self.ja_bert_proj(ja_bert).transpose(1, 2)
+        x = (
+            self.emb(x)
+            + self.tone_emb(tone)
+            + self.language_emb(language)
+            + bert_emb
+            + ja_bert_emb
+        ) * math.sqrt(self.hidden_channels)  # [b, t, h]
         x = torch.transpose(x, 1, -1)  # [b, h, t]
-        x_mask = torch.unsqueeze(sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
+        x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(x.dtype)
 
-        x = self.encoder(x, x_mask, tone, language, bert, ja_bert, g)
+        x = self.encoder(x * x_mask, x_mask, tone=tone, language=language, bert=bert, ja_bert=ja_bert, g=g)
         stats = self.proj(x) * x_mask
 
         m, logs = torch.split(stats, [self.out_channels, self.out_channels], dim=1)
